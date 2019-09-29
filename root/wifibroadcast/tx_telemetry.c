@@ -168,6 +168,7 @@ void usage(void)
 	"tele_protocol=1   		# Telemetry protocol to be used. 0 = Mavlink. 1 = generic (for all others)\n"
 	"wifimode=0		    	# Wi-Fi mode. 0=802.11g 1=802.11n"
 	"ldpc=0		        	# 1-Use LDPC encode, 0-default. Experimental. Only valid when wifimode=n and both your Wi-Fi cards support LDPC."
+	"stbc=0					# 0-default, 1-1 STBC stream, 2-2 STBC streams, 3-3 STBC streams. Only valid when wifimode=n and both your Wi-Fi cards support STBC.\n"
 	"rate=6             	# Data rate to send frames with. Currently only supported with Ralink cards. Choose 6,12,18,24,36 Mbit\n"
 	"mode=0             	# Transmission mode, not used. 0 = send on all interfaces, 1 = send only on interface with best RSSI\n"
 	"nic=wlan0          	# Wi-Fi interface\n"
@@ -474,6 +475,7 @@ int main(int argc, char *argv[])
     int param_debug = 0;
 	int param_wifimode = 0;
 	int param_ldpc = 0;
+	int param_stbc = 0;
 	int param_encrypt_enable = 0;
 	char * param_encrypt_password = NULL;
 
@@ -503,6 +505,8 @@ int main(int argc, char *argv[])
 	param_transmission_mode = iniparser_getint(ini, "tx_telemetry:mode", 0);
 	param_wifimode = (0 == iniparser_getint(ini, "tx:wifimode", 0))? 0: 1;
 	param_ldpc = iniparser_getint(ini, "tx_telemetry:ldpc", 0);
+	param_stbc = iniparser_getint(ini, "tx_telemetry:stbc", 0);
+	
 	param_encrypt_enable = iniparser_getint(ini, "tx_telemetry:encrypt", 0);
 	if (param_encrypt_enable == 1) {
 		param_encrypt_password = (char *)iniparser_getstring(ini, "tx_telemetry:password", NULL);
@@ -591,6 +595,25 @@ int main(int argc, char *argv[])
 		} else if (param_ldpc == 1){
 			u8aRadiotapHeader80211n[10] |= 0x10;
 			u8aRadiotapHeader80211n[11] |= 0x10;
+		}
+		switch (param_stbc) {
+		case 1: 
+			u8aRadiotapHeader80211n[10] |= 0x20;
+			u8aRadiotapHeader80211n[11] |= (0x1 << 5);
+		break; 
+		case 2:
+			u8aRadiotapHeader80211n[10] |= 0x20;
+			u8aRadiotapHeader80211n[11] |= (0x2 << 5);
+		break;
+		case 3: 
+			u8aRadiotapHeader80211n[10] |= 0x20;
+			u8aRadiotapHeader80211n[11] |= (0x3 << 5);
+		break;
+		case 0:
+		default:
+			u8aRadiotapHeader80211n[10] &= (~0x20);
+			u8aRadiotapHeader80211n[11] &= (~0x60);
+		break;
 		}
 		memcpy(headers_atheros, u8aRadiotapHeader80211n, sizeof(u8aRadiotapHeader80211n)); // radiotap header
 		memcpy(headers_ralink, u8aRadiotapHeader80211n, sizeof(u8aRadiotapHeader80211n));// radiotap header
