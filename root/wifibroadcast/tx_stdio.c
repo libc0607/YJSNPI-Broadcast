@@ -118,12 +118,13 @@ void usage(void)
 		"packetsize=1024\n"
 		"wifimode=0\n"
 		"ldpc=0\n"
+		"stbc=2\n"
 		"rate=6\n"
 	);
     exit(1);
 }
 
-void packet_header_init(uint8_t * header, int mode, int rate, int ldpc) 
+void packet_header_init(uint8_t * header, int mode, int rate, int ldpc, int stbc) 
 {
 	if (mode == 0) {	// 802.11g
 		switch (rate) {
@@ -152,6 +153,26 @@ void packet_header_init(uint8_t * header, int mode, int rate, int ldpc)
 			header[11] &= (~0x10);
 			header[12] = (uint8_t)rate;
 		}
+		switch (stbc) {
+		case 1: 
+			header[10] |= 0x20;
+			header[11] |= (0x1 << 5);
+		break; 
+		case 2:
+			header[10] |= 0x20;
+			header[11] |= (0x2 << 5);
+		break;
+		case 3: 
+			header[10] |= 0x20;
+			header[11] |= (0x3 << 5);
+		break;
+		case 0:
+		default:
+			header[10] &= (~0x20);
+			header[11] &= (~0x60);
+		break;
+		}
+		
 	}
 	return;
 }
@@ -188,7 +209,7 @@ int main (int argc, char *argv[])
 		exit(1);
 	}
 	
-	packet_header_init(p_rtheader, iniparser_getint(ini, "PROGRAM_NAME:wifimode", 0), iniparser_getint(ini, "PROGRAM_NAME:rate", 0), iniparser_getint(ini, "PROGRAM_NAME:ldpc", 0));
+	packet_header_init(p_rtheader, iniparser_getint(ini, "PROGRAM_NAME:wifimode", 0), iniparser_getint(ini, "PROGRAM_NAME:rate", 0), iniparser_getint(ini, "PROGRAM_NAME:ldpc", 0), iniparser_getint(ini, "PROGRAM_NAME:stbc", 0));
 	
 	p_packet_buf = (uint8_t *)malloc(max_mtu);
 	if (NULL == p_packet_buf) {
