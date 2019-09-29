@@ -1,0 +1,53 @@
+
+# Enable audio (loads snd_bcm2835)
+dtparam=audio=off
+
+# Enable camera
+start_x=1
+gpu_mem=128
+
+# force gpu to run in turbo mode for less latency and jitter
+force_turbo=1
+
+# Set CPU speed to 900Mhz
+arm_freq=900
+
+# Set higher voltage for stability
+over_voltage=3
+
+# overclock CORE/GPU/SDRAM for less latency and higher data troughput
+gpu_freq=400
+sdram_freq=433
+
+# speed-up booting
+bootcode_delay=0
+boot_delay=0
+disable_splash=1
+
+
+# disable Bluetooth on Pi3 so that the GPIO serial port is usable
+dtoverlay=pi3-disable-bt
+# Disable Wifi
+dtoverlay=pi3-disable-wifi
+
+# Working as a USB Device
+dtoverlay=dwc2 
+
+# Enable DPI LCD (800x480 by default)
+dtparam=spi=off
+dtparam=i2c_arm=off
+dtoverlay=dpi24
+overscan_left=0
+overscan_right=0
+overscan_top=0
+overscan_bottom=0
+framebuffer_width=800
+framebuffer_height=480
+enable_dpi_lcd=1
+display_default_lcd=1
+dpi_group=2
+dpi_mode=87
+dpi_output_format=0x6f005
+dpi_timings=800 0 40 48 88 480 0 13 3 32 0 0 0 60 0 32000000 6
+
+ 

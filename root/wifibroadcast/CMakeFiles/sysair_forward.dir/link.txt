@@ -1,0 +1,1 @@
+/usr/bin/cc   -rdynamic CMakeFiles/sysair_forward.dir/sysair_forward.c.o  -o sysair_forward -lrt -lpcap -liniparser 

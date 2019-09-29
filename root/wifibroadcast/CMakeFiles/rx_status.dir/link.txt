@@ -1,0 +1,1 @@
+/usr/bin/cc   -rdynamic CMakeFiles/rx_status.dir/rx_status.c.o  -o rx_status -lrt -lpcap 

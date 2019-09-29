@@ -1,0 +1,1 @@
+/usr/bin/cc   -rdynamic CMakeFiles/tx_telemetry.dir/tx_telemetry.c.o CMakeFiles/tx_telemetry.dir/lib.c.o CMakeFiles/tx_telemetry.dir/fec.c.o CMakeFiles/tx_telemetry.dir/xxtea.c.o  -o tx_telemetry -lrt -lpcap -liniparser 

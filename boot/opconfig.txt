@@ -1,0 +1,6 @@
+#!/bin/bash
+#
+# OpenWrt IP, Username & Password
+#	
+OPENWRT_IP=192.168.1.1
+OPENWRT_CONF_PATH=/wbc-config.ini

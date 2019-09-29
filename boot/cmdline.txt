@@ -1,0 +1,1 @@
+dwc_otg.lpm_enable=0 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 nofsck elevator=deadline fsck.mode=skip noswap ro rootwait modules-load=dwc2,g_ether g_ether.dev_addr=00:22:82:ff:ff:22 consoleblank=0 loglevel=3 vt.global_cursor_default=0 fbcon=map:10 
