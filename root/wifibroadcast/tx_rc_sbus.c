@@ -12,6 +12,7 @@ uart=/dev/ttyUSB0
 wifimode=0				// 0-b/g 1-n
 rate=6					// Mbit(802.11b/g) / mcs index(802.11n/ac)
 ldpc=0					// 802.11n/ac only
+stbc=0
 retrans=2
 encrypt=0
 password=1145141919810
@@ -236,6 +237,7 @@ uint8_t bitrate_to_rtap8 (int bitrate)
 		case 24: ret=0x30; break;
 		case 36: ret=0x48; break;
 		case 48: ret=0x60; break;
+		case 54: ret=0x6C; break;
 		default: fprintf(stderr, "ERROR: Wrong or no data rate specified\n"); exit(1); break;
 	}
 	return ret;
@@ -308,6 +310,7 @@ int packet_rtheader_init (int offset, uint8_t *buf, dictionary *ini)
 	int param_bitrate = iniparser_getint(ini, "tx_rc_sbus:rate", 0);
 	int param_wifimode = iniparser_getint(ini, "tx_rc_sbus:wifimode", 0);
 	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:ldpc", 0): 0;
+	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:stbc", 0): 0;
 	uint8_t * p_rtheader = (param_wifimode == 1)? u8aRadiotapHeader80211n: u8aRadiotapHeader;
 	size_t rtheader_length = (param_wifimode == 1)? sizeof(u8aRadiotapHeader80211n): sizeof(u8aRadiotapHeader);
 
@@ -323,6 +326,26 @@ int packet_rtheader_init (int offset, uint8_t *buf, dictionary *ini)
 			u8aRadiotapHeader80211n[10] |= 0x10;
 			u8aRadiotapHeader80211n[11] |= 0x10;
 			u8aRadiotapHeader80211n[12] = (uint8_t)param_bitrate;
+		}
+		switch (param_stbc) {
+		case 1: 
+			u8aRadiotapHeader80211n[10] |= 0x20;
+			u8aRadiotapHeader80211n[11] |= (0x1 << 5);
+		break; 
+		case 2:
+			u8aRadiotapHeader80211n[10] |= 0x20;
+			u8aRadiotapHeader80211n[11] |= (0x2 << 5);
+		break;
+		case 3: 
+			u8aRadiotapHeader80211n[10] |= 0x20;
+			u8aRadiotapHeader80211n[11] |= (0x3 << 5);
+		break;
+		case 0:
+		default:
+			// clear all bits
+			u8aRadiotapHeader80211n[10] &= (~0x20);
+			u8aRadiotapHeader80211n[11] &= (~0x60);
+		break;
 		}
 		
 	}
