@@ -48,6 +48,7 @@
 
 int sock = 0;
 int socks[4];
+int udp_send_fd;
 int skipfec = 0;
 int block_cnt = 0;
 int param_port = 0;
@@ -174,24 +175,12 @@ void usage(void) {
 		"nic=wlan0\t\t\t# Wi-Fi interface\n"
 		"encrypt=1\t\t\t# enable encrypt. Note that when encrypt is enabled, the actual payload length will be reduced by 4\n"
 		"password=yarimasune1919810\n"
+		"udp_send=0	"
+		"udp_send_to_ip=1.1.1.1		# send data to udp"
+		"udp_send_to_port=1025			# udp send port"
+		"udp_send_bind_port=1026			# udp bind port"
 		, 1024, MAX_USER_PACKET_LENGTH
 	);
-/*     printf(
-	"\nUsage: tx_rawsock [options] <interfaces>\n"
-	"\n"
-	"Options:\n"
-	"-b <count>  Number of data packets in a block (default 8). Needs to match with rx.\n"
-	"-r <count>  Number of FEC packets per block (default 4). Needs to match with rx.\n"
-	"-f <bytes>  Number of bytes per packet (default %d, max. %d). This is also the FEC block size. Needs to match with rx.\n"
-	"-m <bytes>  Minimum number of bytes per frame (default: 28)\n"
-	"-p <port>   Port number 0-127 (default 0)\n"
-	"-t <type>   Frame type to send. 0 = DATA short, 1 = DATA standard, 2 = RTS\n"
-	"-d <rate>   Data rate to send frames with. Currently only supported with Ralink cards. Choose 6,12,18,24,36,48 Mbit\n"
-	"-y <mode>   Transmission mode. 0 = send on all interfaces, 1 = send only on interface with best RSSI\n"
-        "\n"
-        "Example:\n"
-        "  cat /dev/zero | tx_rawsock -b 8 -r 4 -f 1024 -t 1 -d 24 -y 0 wlan0 (reads zeros from stdin and sends them out on wlan0) as standard DATA frames\n"
-        "\n", 1024, MAX_USER_PACKET_LENGTH); */
     exit(1);
 }
 
@@ -318,9 +307,11 @@ int packet_header_init(uint8_t *packet_header, int type, int mode, int ldpc, int
 
 int pb_transmit_packet(int seq_nr, uint8_t *packet_transmit_buffer, int packet_header_len, 
 						const uint8_t *packet_data, int packet_length, int num_interfaces, 
-						int param_transmission_mode, int best_adapter) {
+						int param_transmission_mode, int best_adapter, 
+						int udp_send, sockaddr_in * udp_addr) 
+{
     int i = 0;
-
+	
     //add header outside of FEC
     wifi_packet_header_t *wph = (wifi_packet_header_t*)(packet_transmit_buffer + packet_header_len);
     wph->sequence_number = seq_nr;
@@ -332,27 +323,33 @@ int pb_transmit_packet(int seq_nr, uint8_t *packet_transmit_buffer, int packet_h
 
     if (best_adapter == 5) {
 		for(i=0; i<num_interfaces; ++i) {
-	//	    if (write(socks[i], packet_transmit_buffer, plen) < 0 ) fprintf(stdout, "!");
 			if (write(socks[i], packet_transmit_buffer, plen) < 0 ) 
 				return 1;
 		}
     } else {
-	//	if (write(socks[best_adapter], packet_transmit_buffer, plen) < 0 ) fprintf(stdout, "!");
 		if (write(socks[best_adapter], packet_transmit_buffer, plen) < 0 ) 
 			return 1;
     }
+	if (udp_send == 1) {
+		sockaddr_in * addr = udp_addr;
+		if ( sendto(udp_send_fd, (packet_transmit_buffer + packet_header_len), 
+						(packet_length + sizeof(wifi_packet_header_t)), 0, 
+						(struct sockaddr*)addr, sizeof(sockaddr_in)) == -1) {
+			fprintf(stderr, "Error: udp send failed: sendto() returns -1.\n");				
+		}
+			
+	}
+	
     return 0;
 }
-
-
-
 
 void pb_transmit_block (packet_buffer_t *pbl, int *seq_nr, int port, 
 						int packet_length, uint8_t *packet_transmit_buffer, 
 						int packet_header_len, int data_packets_per_block, 
 						int fec_packets_per_block, int num_interfaces, 
 						int param_transmission_mode, telemetry_data_t *td1,
-						int enable_encrypt, char * encrypt_password) {
+						int enable_encrypt, char * encrypt_password,
+						int udp_send, sockaddr_in * udp_addr) {
 	int i;
 	uint8_t *data_blocks[MAX_DATA_OR_FEC_PACKETS_PER_BLOCK];
 	uint8_t fec_pool[MAX_DATA_OR_FEC_PACKETS_PER_BLOCK][MAX_USER_PACKET_LENGTH];
@@ -405,8 +402,9 @@ void pb_transmit_block (packet_buffer_t *pbl, int *seq_nr, int port,
 
 	    if(di < data_packets_per_block) {
 			if (pb_transmit_packet(seq_nr_tmp, packet_transmit_buffer, packet_header_len, 
-									data_blocks[di], packet_length,num_interfaces, 
-									param_transmission_mode,best_adapter)) 
+									data_blocks[di], packet_length, num_interfaces, 
+									param_transmission_mode, best_adapter, 
+									udp_send, udp_addr)) 
 				td1->tx_status->injection_fail_cnt++;
 			seq_nr_tmp++;
 			di++;
@@ -417,14 +415,16 @@ void pb_transmit_block (packet_buffer_t *pbl, int *seq_nr, int port,
 				if (pb_transmit_packet(seq_nr_tmp, packet_transmit_buffer, 
 										packet_header_len, fec_blocks[fi], 
 										packet_length, num_interfaces,
-										param_transmission_mode, best_adapter)) 
+										param_transmission_mode, best_adapter, 
+										udp_send, udp_addr)) 
 					td1->tx_status->injection_fail_cnt++;
 			} else {
 				if (counterfec % 2 == 0) {
 					if (pb_transmit_packet(seq_nr_tmp, packet_transmit_buffer, 
 											packet_header_len, fec_blocks[fi], 
-											packet_length,num_interfaces,
-											param_transmission_mode,best_adapter)) 
+											packet_length, num_interfaces,
+											param_transmission_mode, best_adapter, 
+											udp_send, udp_addr)) 
 						td1->tx_status->injection_fail_cnt++;
 				} else {
 	//			   fprintf(stdout,"not transmitted\n");
@@ -483,7 +483,8 @@ void pb_transmit_block (packet_buffer_t *pbl, int *seq_nr, int port,
 
 }
 
-void status_memory_init(wifibroadcast_tx_status_t *s) {
+void status_memory_init(wifibroadcast_tx_status_t *s) 
+{
     s->last_update = 0;
     s->injected_block_cnt = 0;
     s->skipped_fec_cnt = 0;
@@ -491,8 +492,8 @@ void status_memory_init(wifibroadcast_tx_status_t *s) {
     s->injection_time_block = 0;
 }
 
-
-wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void) {
+wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void) 
+{
     int fd = 0;
 
 	fd = shm_open("/wifibroadcast_rx_status_0", O_RDWR, S_IRUSR | S_IWUSR);
@@ -513,7 +514,8 @@ wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void) {
     return (wifibroadcast_rx_status_t*)retval;
 }
 
-wifibroadcast_tx_status_t *telemetry_wbc_status_memory_open_tx(void) {
+wifibroadcast_tx_status_t *telemetry_wbc_status_memory_open_tx(void) 
+{
 	int fd = 0;
 	char buf[128];
 	int sharedmem = 0;
@@ -542,15 +544,14 @@ wifibroadcast_tx_status_t *telemetry_wbc_status_memory_open_tx(void) {
 	return tretval;
 }
 
-
-
-void telemetry_init(telemetry_data_t *td) {
+void telemetry_init(telemetry_data_t *td) 
+{
     td->rx_status = telemetry_wbc_status_memory_open();
     td->tx_status = telemetry_wbc_status_memory_open_tx();
 }
 
-
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[]) 
+{
 
     setpriority(PRIO_PROCESS, 0, -10);
 
@@ -644,6 +645,34 @@ int main(int argc, char *argv[]) {
 	// We should increase net.core.rmem_max as well (>= udp_bufsize/2)
     setsockopt(udp_sockfd, SOL_SOCKET, SO_RCVBUF, (const char*)&udp_bufsize, sizeof(udp_bufsize));
  
+	// udp sender option (for LTE)
+	int16_t param_udp_send_to_port = 0;
+	int16_t param_udp_send_bind_port = 0;
+	char * param_udp_send_to_ip;
+	struct sockaddr_in s_udp_addr_send, s_udp_addr_bind;
+	bzero(&s_udp_addr_send, sizeof(s_udp_addr_send));
+	bzero(&s_udp_addr_bind, sizeof(s_udp_addr_bind));
+	int param_udp_send = iniparser_getint(ini, "tx:udp_send", 0);
+	if (param_udp_send == 1) {
+		param_udp_send_to_port= atoi(iniparser_getstring(ini, "tx:udp_send_to_port", NULL));
+		param_udp_send_bind_port= atoi(iniparser_getstring(ini, "tx:udp_send_bind_port", NULL));
+		param_udp_send_to_ip = (char *)iniparser_getstring(ini, "tx:udp_ip", NULL);
+		s_udp_addr_send.sin_family = AF_INET;
+		s_udp_addr_send.sin_port = htons(param_udp_send_to_port);
+		s_udp_addr_send.sin_addr.s_addr = inet_addr(iniparser_getstring(ini, "tx:udp_send_to_ip", NULL));
+		s_udp_addr_bind.sin_family = AF_INET;
+		s_udp_addr_bind.sin_port = htons(param_udp_send_bind_port);
+		s_udp_addr_bind.sin_addr.s_addr = htonl(INADDR_ANY);
+			
+		if ((udp_send_fd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) {
+			printf("ERROR: Could not create UDP (send) socket!");
+		}
+		if (-1 == bind(udp_send_fd, (struct sockaddr*)&s_udp_addr_bind, sizeof(s_udp_addr_bind))) {
+			fprintf(stderr, "Error: Bind UDP port failed.\n");
+			exit(1);
+		}
+	}
+	
     if (param_packet_length > MAX_USER_PACKET_LENGTH) {
 		fprintf(stderr, "ERROR; Packet length is limited to %d bytes (you requested %d bytes)\n", MAX_USER_PACKET_LENGTH, param_packet_length);
 		return (1);
@@ -661,8 +690,6 @@ int main(int argc, char *argv[]) {
 		fprintf(stderr, "ERROR: Data and FEC packets per block are limited to %d (you requested %d data, %d FEC)\n", MAX_DATA_OR_FEC_PACKETS_PER_BLOCK, param_data_packets_per_block, param_fec_packets_per_block);
 		return (1);
     }
-
-	
 
     packet_header_length = packet_header_init(packet_transmit_buffer, param_packet_type, param_wifi_mode, param_wifi_ldpc, param_wifi_stbc, param_data_rate, param_port);
 
@@ -742,7 +769,8 @@ int main(int argc, char *argv[]) {
 									packet_header_length, param_data_packets_per_block, 
 									param_fec_packets_per_block, num_interfaces, 
 									param_transmission_mode, &td,
-									param_encrypt_enable, param_encrypt_password);
+									param_encrypt_enable, param_encrypt_password,
+									param_udp_send, &s_udp_addr_send);
 				input.curr_pb = 0;
 			} else {
 				input.curr_pb++;
@@ -754,3 +782,4 @@ int main(int argc, char *argv[]) {
     printf("ERROR: Broken socket!\n");
     return (0);
 }
+
