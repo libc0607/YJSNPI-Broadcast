@@ -479,7 +479,7 @@ int main (int argc, char *argv[])
 			fprintf(stderr, "uart read() got an error\n");
 			continue;
 		}
-		
+		subseqno = 0;
 		// 2. send packet
 		for (k = 0; k < param_retrans; k++) {
 			
