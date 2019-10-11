@@ -62,10 +62,8 @@ int udpfd;
 int param_baudrate;
 int param_mode;
 int param_debug;
-uint32_t seqno, last_seqno, crc32_val;
-uint8_t frame_length;
 uint8_t sbus_output_buf[25];
-
+uint32_t last_seq, last_subseq;
 wifibroadcast_rx_status_t_rc *rx_status_rc = NULL;
 uint32_t sumdcrc = 0;
 
@@ -154,6 +152,29 @@ typedef struct {
 	int n80211HeaderLength;
 } monitor_interface_t;
 
+// To-do: do not use #define 
+#define FRAME_BODY_LENGTH 25
+#define FRAME_HEADER_LENGTH 16
+#define FRAME_VER 0
+struct framedata_s
+{
+	// info
+	uint8_t ver;					// version
+	uint8_t headerlen;				// header length
+	uint16_t bodylen;				// body length
+	
+	uint32_t crc;					// full framedata_s crc
+
+    uint32_t seqnum;				// seq number
+	
+	uint8_t subseqnum;				// 
+	uint8_t zero[3];				// future use
+	
+	// payload
+    uint8_t body[FRAME_BODY_LENGTH];
+
+};
+
 unsigned int xcrc32 (const unsigned char *buf, int len, unsigned int init)
 {
 	unsigned int crc = init;
@@ -170,7 +191,7 @@ void dump_memory(void* p, int length, char * tag)
 	unsigned char *addr = (unsigned char *)p;
 
 	fprintf(stderr, "\n");
-	fprintf(stderr, "===== Memory dump at %s: 0x%x, length=%d =====", tag, p, length);
+	fprintf(stderr, "===== Memory dump at %s: 0x%x, length=%d =====", tag, *((uint32_t *)p), length);
 	fprintf(stderr, "\n");
 
 	for(i = 0; i < 16; i++)
@@ -242,7 +263,11 @@ int32_t process_packet(monitor_interface_t *interface, int serialport)
     struct pcap_pkthdr * ppcapPacketHeader = NULL;
 	uint8_t payloadBuffer[300];
     uint8_t *pu8Payload = payloadBuffer;
-    
+    uint8_t frame_length;
+	struct framedata_s * p_framedata;
+	uint32_t crc32_calculated, seqno, subseqno, crc32_val;
+	
+	bzero(&prd, sizeof(prd));
 	
     // receive
     retval = pcap_next_ex(interface->ppcap, &ppcapPacketHeader, (const u_char**)&pu8Payload);
@@ -256,7 +281,7 @@ int32_t process_packet(monitor_interface_t *interface, int serialport)
 		}
     }
     if (retval != 1)
-		return;
+		return 0;
 
     // fetch radiotap header length from radiotap header 
     u16HeaderLen = (pu8Payload[2] + (pu8Payload[3] << 8));
@@ -292,44 +317,53 @@ int32_t process_packet(monitor_interface_t *interface, int serialport)
 	pu8Payload += u16HeaderLen + interface->n80211HeaderLength;
 	
 	// Process packet
+	
+	p_framedata = (struct framedata_s*)pu8Payload;
+	crc32_val = p_framedata->crc;
 
-	crc32_val = *((uint32_t *)pu8Payload);
-	pu8Payload += 4;
 	// "framedata.length"
-	frame_length = *((uint8_t *)pu8Payload);
-	pu8Payload += 1;
-	// verify crc32
+	frame_length = (uint32_t)(p_framedata->headerlen) + (uint32_t)(p_framedata->bodylen);
 
-	uint32_t crc32_calculated;
-	uint32_t crc32_startvalue = 0xffffffff;
-	memcpy(pu8Payload, &crc_magic, sizeof(crc_magic));
-	crc32_calculated = htonl( xcrc32( pu8Payload-5, (int)frame_length, crc32_startvalue) );
-	fprintf(stderr, "Got packet: length=%d, crc=0x%x(0x%x)", frame_length, crc32_val, crc32_calculated);
-	if (crc32_calculated != crc32_val) {
-		fprintf(stderr, "process_packet(): got a packet with crc32 error.\n");
-		return;
+	crc32_calculated = htonl( xcrc32( pu8Payload, (int)frame_length, 0xffffffff) );
+	if (param_debug) {
+		fprintf(stderr, "Got packet: length=%d, crc=0x%x(calculated 0x%x)", frame_length, crc32_val, crc32_calculated);
 	}
+	
+	if (crc32_calculated != crc32_val) {
+		if (param_debug) {
+			fprintf(stderr, "process_packet(): got a packet with crc32 error.\n");
+		}
+		return 0;
+	}
+	
 	// "framedata.seqno"
-	// e.g. when last_seqno=10, seqno=14 => 11~13 were lost => (14-10+1) packets lost
-	seqno = ntohl(*((uint32_t *)pu8Payload));
-	if (last_seqno + 1 == seqno) {
+	// "message"	|AAAAA	|BBBBB	|CCCCC	|...	
+	// seqno		|0		|1		|2		|...
+	// subseqno		|0	|1	|0	|1	|0	|1	|...	
+	seqno = ntohl(p_framedata->seqnum);
+	subseqno = p_framedata->subseqnum;
+	// check if we've got the new message:
+	if (seqno == last_seq) {
+		// 1. we received that message the second (or maybe more) time
+		// ... what should we do?
+	} else if (last_seq + 1 == seqno) {
+		// 2. we received that message the first time
 		rx_status_rc->adapter[0].signal_good = 1;
 	} else {
-		rx_status_rc->lost_packet_cnt = rx_status_rc->lost_packet_cnt + (seqno - last_seqno + 1);
+		// 3. we lost some messages 
+		// e.g. when last_seq=10, seqno=14 => 11~13 were lost => (14-10+1) packets lost
+		rx_status_rc->lost_packet_cnt += (seqno - last_seq + 1);
 		rx_status_rc->adapter[0].signal_good = 0;
 	}
-	last_seqno = seqno;
-	pu8Payload += 4;
-	// "framedata.info"
-	// pass
-	pu8Payload += 4;
-	// "framedata.sbus_data"
-	memcpy(sbus_output_buf, pu8Payload, sizeof(sbus_output_buf)); 
+	last_seq = seqno;
+	last_subseq = subseqno;
+
+	memcpy(sbus_output_buf, p_framedata->body, sizeof(sbus_output_buf)); 
 	
 	// Write data to uart	
 	write(serialport, sbus_output_buf, sizeof(sbus_output_buf));
 
-	return;
+	return 0;
 }
 
 void status_memory_init_rc(wifibroadcast_rx_status_t_rc *s) 
@@ -413,7 +447,7 @@ int main(int argc, char *argv[])
 	}
 
 	// init & check nic
-	char * nic_name = iniparser_getstring(ini, "PROGRAM_NAME:nic", NULL);
+	char * nic_name = (char *)iniparser_getstring(ini, "PROGRAM_NAME:nic", NULL);
 	int nic_type = 0;
 	if (-1 == (nic_type = check_nic_type(nic_name))) {
 		exit(1);
@@ -425,7 +459,7 @@ int main(int argc, char *argv[])
 	rx_status_rc->wifi_adapter_cnt = 1;	
 
 	// init uart
-	char * uart_name = iniparser_getstring(ini, "PROGRAM_NAME:uart", NULL);
+	char * uart_name = (char *)iniparser_getstring(ini, "PROGRAM_NAME:uart", NULL);
 	uartfd = open(uart_name, O_RDWR|O_NOCTTY|O_NDELAY);			
 	if (uartfd < 0) {
 		fprintf(stderr, "PROGRAM_NAME ERROR: Unable to open UART. Ensure it is not in use by another application.\n");
