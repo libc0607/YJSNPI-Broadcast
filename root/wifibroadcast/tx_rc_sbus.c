@@ -80,22 +80,26 @@ static uint8_t u8aIeeeHeader_rts[] = {
         0xff, // 1st byte of IEEE802.11 RA (mac) must be 0xff or something odd (wifi hardware determines broadcast/multicast through odd/even check)
 };
 
-#define SBUS_FRAME_LENGTH_BYTE 25
-#define FRAME_DATA_OFFSET 32
+// To-do: do not use #define 
+#define FRAME_BODY_LENGTH 25
+#define FRAME_HEADER_LENGTH 16
+#define FRAME_VER 0
 struct framedata_s 
 {
-	// 16 bytes info
-	uint32_t crc;					// wip
-	uint32_t length;				// body length
-    uint32_t seqnumber;
-	uint32_t info;					// information of this packet, 0x0 now
+	// info
+	uint8_t ver;					// version
+	uint8_t headerlen;				// header length
+	uint16_t bodylen;				// body length
 	
-	// 16 bytes for future use
-	uint32_t random;				// random number; prevent replay attack (with encrypt enabled)
-	uint32_t zero[3];				// for future use
+	uint32_t crc;					// full framedata_s crc
+
+    uint32_t seqnum;				// seq number
+	
+	uint8_t subseqnum;				// 
+	uint8_t zero[3];				// future use
 	
 	// payload
-    uint8_t data[SBUS_FRAME_LENGTH_BYTE];
+    uint8_t body[FRAME_BODY_LENGTH];
 
 } __attribute__ ((__packed__));
 
@@ -433,9 +437,7 @@ int main (int argc, char *argv[])
 		fprintf(stderr, "open uart failed!\n"); 
 	}
 	int r = uart_sbus_init(uartfd);
-	if (r == 0) {
-        fprintf(stderr, "Set UART to S.BUS port successfully.\n");
-    } else {
+	if (r != 0) {
         perror("uart ioctl");
     }
 	
@@ -454,6 +456,7 @@ int main (int argc, char *argv[])
 	
 	// Main loop
 	uint32_t seqno = 0;
+	uint8_t subseqno = 0;
 	int k = 0;
 	int uart_read_len = 0;
 	int full_header_length = rtheader_length + ieeeheader_length;
@@ -463,12 +466,12 @@ int main (int argc, char *argv[])
 	
 	while (1) {
 		// 1. Get data from UART
-		//uart_read_len = read(uartfd, buf+full_header_length+FRAME_DATA_OFFSET, SBUS_FRAME_LENGTH_BYTE);
+		//uart_read_len = read(uartfd, buf+full_header_length+FRAME_HEADER_LENGTH, FRAME_BODY_LENGTH);
 		bzero(uart_read_buf, sizeof(uart_read_buf));
-		uart_read_len = read(uartfd, uart_read_buf, SBUS_FRAME_LENGTH_BYTE);
+		uart_read_len = read(uartfd, uart_read_buf, FRAME_BODY_LENGTH);
 		if (param_debug) {
 			fprintf(stderr, "uart read() got %d bytes\n", uart_read_len);
-			dump_memory(buf+full_header_length+FRAME_DATA_OFFSET, uart_read_len, "uart read");
+			dump_memory(buf+full_header_length+FRAME_HEADER_LENGTH, uart_read_len, "uart read");
 		}
 		if (uart_read_len == 0)
 			continue;
@@ -481,17 +484,18 @@ int main (int argc, char *argv[])
 		for (k = 0; k < param_retrans; k++) {
 			
 			// 2.0 clean buffer
-			bzero(buf+full_header_length+FRAME_DATA_OFFSET, sizeof(framedata)-FRAME_DATA_OFFSET);
+			bzero(buf+full_header_length+FRAME_HEADER_LENGTH, sizeof(framedata)-FRAME_HEADER_LENGTH);
 			
 			// 2.1 fill frame (seqno, data, info(wip...) )
-			framedata.seqnumber = htonl(seqno);
-			memcpy(buf+full_header_length+FRAME_DATA_OFFSET, uart_read_buf, uart_read_len);
+			framedata.ver = FRAME_VER;
+			framedata.headerlen = FRAME_HEADER_LENGTH;
+			framedata.bodylen = htons(FRAME_BODY_LENGTH);
+			framedata.seqnum = htonl(seqno);
+			framedata.subseqnum = subseqno;
+			memcpy(buf+full_header_length+FRAME_HEADER_LENGTH, uart_read_buf, uart_read_len);
 			
-			// 2.2 get random number
-			while (rand_size == -1) {
-				rand_size = getrandom(&(framedata.random), sizeof(framedata.random), 0);
-			}
-		
+			// 2.2 pass
+
 			// 2.3 calculate crc32: fill 0xffffffff first
 			framedata.crc = 0xffffffff;
 			framedata.crc = htonl(xcrc32(buf+full_header_length, sizeof(framedata), 0xffffffff));
@@ -514,6 +518,7 @@ int main (int argc, char *argv[])
 				} 
 			}
 			usleep(2000);
+			subseqno++;
 		}
 		seqno++;
 	}
