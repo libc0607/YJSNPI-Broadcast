@@ -1,1 +1,0 @@
-/usr/bin/cc   -rdynamic CMakeFiles/rx_stdio.dir/rx_stdio.c.o CMakeFiles/rx_stdio.dir/lib.c.o CMakeFiles/rx_stdio.dir/radiotap.c.o  -o rx_stdio -lrt -lpcap -liniparser 

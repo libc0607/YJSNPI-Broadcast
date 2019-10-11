@@ -1,1 +1,0 @@
-/usr/bin/cc   -rdynamic CMakeFiles/rx_rc_telemetry_buf.dir/rx_rc_telemetry_buf.c.o CMakeFiles/rx_rc_telemetry_buf.dir/lib.c.o CMakeFiles/rx_rc_telemetry_buf.dir/radiotap.c.o CMakeFiles/rx_rc_telemetry_buf.dir/xxtea.c.o  -o rx_rc_telemetry_buf -lrt -lpcap -liniparser 

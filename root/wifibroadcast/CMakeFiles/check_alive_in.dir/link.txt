@@ -1,1 +1,0 @@
-/usr/bin/cc   -rdynamic CMakeFiles/check_alive_in.dir/check_alive_in.c.o  -o check_alive_in -lrt -lpcap -liniparser 

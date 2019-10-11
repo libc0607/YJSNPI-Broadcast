@@ -1,1 +1,0 @@
-/usr/bin/cc   -rdynamic CMakeFiles/rssi_forward_in.dir/rssi_forward_in.c.o  -o rssi_forward_in -lrt -lpcap -liniparser 

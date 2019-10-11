@@ -1,1 +1,0 @@
-/usr/bin/cc   -rdynamic CMakeFiles/rssirx.dir/rssirx.c.o CMakeFiles/rssirx.dir/lib.c.o CMakeFiles/rssirx.dir/radiotap.c.o CMakeFiles/rssirx.dir/xxtea.c.o  -o rssirx -lrt -lpcap -liniparser 

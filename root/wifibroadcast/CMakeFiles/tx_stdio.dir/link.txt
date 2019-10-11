@@ -1,1 +1,0 @@
-/usr/bin/cc   -rdynamic CMakeFiles/tx_stdio.dir/tx_stdio.c.o  -o tx_stdio -lrt -lpcap -liniparser 

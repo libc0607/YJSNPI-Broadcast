@@ -1,1 +1,0 @@
-/usr/bin/cc   -rdynamic CMakeFiles/rx_rc_sbus.dir/rx_rc_sbus.c.o CMakeFiles/rx_rc_sbus.dir/lib.c.o CMakeFiles/rx_rc_sbus.dir/radiotap.c.o CMakeFiles/rx_rc_sbus.dir/xxtea.c.o  -o rx_rc_sbus -lrt -lpcap -liniparser 
