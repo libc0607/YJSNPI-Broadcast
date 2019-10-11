@@ -1,16 +1,16 @@
 
 ### CMake ###
-CMakeLists.txt.user
-CMakeCache.txt
-CMakeFiles
-CMakeScripts
-Testing
-Makefile
-cmake_install.cmake
-install_manifest.txt
-compile_commands.json
-CTestTestfile.cmake
-_deps
+root/wifibroadcast/CMakeLists.txt.user
+root/wifibroadcast/CMakeCache.txt
+root/wifibroadcast/CMakeFiles
+root/wifibroadcast/CMakeScripts
+root/wifibroadcast/Testing
+root/wifibroadcast/Makefile
+root/wifibroadcast/cmake_install.cmake
+root/wifibroadcast/install_manifest.txt
+root/wifibroadcast/compile_commands.json
+root/wifibroadcast/CTestTestfile.cmake
+root/wifibroadcast/_deps
 
 ### CMake Patch ###
 # External projects
