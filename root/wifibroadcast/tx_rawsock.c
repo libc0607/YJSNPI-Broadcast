@@ -308,7 +308,7 @@ int packet_header_init(uint8_t *packet_header, int type, int mode, int ldpc, int
 int pb_transmit_packet(int seq_nr, uint8_t *packet_transmit_buffer, int packet_header_len, 
 						const uint8_t *packet_data, int packet_length, int num_interfaces, 
 						int param_transmission_mode, int best_adapter, 
-						int udp_send, sockaddr_in * udp_addr) 
+						int udp_send, struct sockaddr_in * udp_addr) 
 {
     int i = 0;
 	
@@ -331,10 +331,10 @@ int pb_transmit_packet(int seq_nr, uint8_t *packet_transmit_buffer, int packet_h
 			return 1;
     }
 	if (udp_send == 1) {
-		sockaddr_in * addr = udp_addr;
+		struct sockaddr_in * addr = udp_addr;
 		if ( sendto(udp_send_fd, (packet_transmit_buffer + packet_header_len), 
 						(packet_length + sizeof(wifi_packet_header_t)), 0, 
-						(struct sockaddr*)addr, sizeof(sockaddr_in)) == -1) {
+						(struct sockaddr*)addr, sizeof(struct sockaddr_in)) == -1) {
 			fprintf(stderr, "Error: udp send failed: sendto() returns -1.\n");				
 		}
 			
@@ -349,7 +349,7 @@ void pb_transmit_block (packet_buffer_t *pbl, int *seq_nr, int port,
 						int fec_packets_per_block, int num_interfaces, 
 						int param_transmission_mode, telemetry_data_t *td1,
 						int enable_encrypt, char * encrypt_password,
-						int udp_send, sockaddr_in * udp_addr) {
+						int udp_send, struct sockaddr_in * udp_addr) {
 	int i;
 	uint8_t *data_blocks[MAX_DATA_OR_FEC_PACKETS_PER_BLOCK];
 	uint8_t fec_pool[MAX_DATA_OR_FEC_PACKETS_PER_BLOCK][MAX_USER_PACKET_LENGTH];
@@ -648,7 +648,7 @@ int main(int argc, char *argv[])
 	// udp sender option (for LTE)
 	int16_t param_udp_send_to_port = 0;
 	int16_t param_udp_send_bind_port = 0;
-	char * param_udp_send_to_ip;
+	char * param_udp_send_to_ip = NULL;
 	struct sockaddr_in s_udp_addr_send, s_udp_addr_bind;
 	bzero(&s_udp_addr_send, sizeof(s_udp_addr_send));
 	bzero(&s_udp_addr_bind, sizeof(s_udp_addr_bind));
@@ -656,10 +656,10 @@ int main(int argc, char *argv[])
 	if (param_udp_send == 1) {
 		param_udp_send_to_port= atoi(iniparser_getstring(ini, "tx:udp_send_to_port", NULL));
 		param_udp_send_bind_port= atoi(iniparser_getstring(ini, "tx:udp_send_bind_port", NULL));
-		param_udp_send_to_ip = (char *)iniparser_getstring(ini, "tx:udp_ip", NULL);
+		param_udp_send_to_ip = (char *)iniparser_getstring(ini, "tx:udp_send_to_ip", NULL);
 		s_udp_addr_send.sin_family = AF_INET;
 		s_udp_addr_send.sin_port = htons(param_udp_send_to_port);
-		s_udp_addr_send.sin_addr.s_addr = inet_addr(iniparser_getstring(ini, "tx:udp_send_to_ip", NULL));
+		s_udp_addr_send.sin_addr.s_addr = inet_addr(param_udp_send_to_ip);
 		s_udp_addr_bind.sin_family = AF_INET;
 		s_udp_addr_bind.sin_port = htons(param_udp_send_bind_port);
 		s_udp_addr_bind.sin_addr.s_addr = htonl(INADDR_ANY);

@@ -1,4 +1,4 @@
-﻿// sysair_forward_in
+// sysair_forward_in
 // Get sysair Data (cpuload, temp. undervolt ..etc)from UDP packet 
 //		and write it into shared mem
 // this program runs on air wrt, Use with sysair_forward (air pi)
@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
 			iniparser_getstring(ini, "sysair_forward_in:udp_port", NULL));
 			
 	int ret = 0;
-	int cardcounter = 0;
+	//int cardcounter = 0;
 	struct sockaddr_in addr;
 	int sockfd;
 	int slen_rssi = sizeof(addr);
@@ -98,7 +98,7 @@ int main(int argc, char *argv[])
 	for(;;) {
 		usleep(100000);
 		ret = recvfrom(sockfd, (char *)&payloaddata, sizeof(payloaddata), 0, 
-					(struct sockaddr*)&addr, &slen_rssi);
+					(struct sockaddr *)&addr, (socklen_t *)&slen_rssi);
 		if (ret > 0) {
 			t_sysair->cpuload = payloaddata.cpuload;
 			t_sysair->temp = payloaddata.temp;

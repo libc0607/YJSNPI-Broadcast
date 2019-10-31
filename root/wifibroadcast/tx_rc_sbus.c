@@ -38,7 +38,7 @@ password=1145141919810
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <stropts.h>
+//#include <stropts.h>
 #include <sys/mman.h>
 #include <sys/random.h>
 #include <sys/resource.h>
@@ -452,7 +452,7 @@ int main (int argc, char *argv[])
 	int ieeeheader_length = packet_ieeeheader_init(rtheader_length, buf, ini);
 	
 	// set length
-	framedata.length = htonl(framedata_body_length);
+	framedata.bodylen = htonl(framedata_body_length);
 	
 	// Main loop
 	uint32_t seqno = 0;
@@ -461,7 +461,7 @@ int main (int argc, char *argv[])
 	int uart_read_len = 0;
 	int full_header_length = rtheader_length + ieeeheader_length;
 	int encrypted_data_length = 0;
-	size_t rand_size = -1;
+	//size_t rand_size = -1;
 	uint8_t uart_read_buf[64] = {0};
 	
 	while (1) {

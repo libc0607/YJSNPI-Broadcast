@@ -58,14 +58,14 @@ int main(int argc, char *argv[]) {
 	
 	
 	int16_t port = atoi(iniparser_getstring(ini, "alive_in:udp_port", NULL));
-	char *param_exec = iniparser_getstring(ini, "alive_in:exec", NULL);
+	char *param_exec = (char *)iniparser_getstring(ini, "alive_in:exec", NULL);
 	struct sockaddr_in send_addr;
 	struct sockaddr_in source_addr;	
 	int sockfd, slen = sizeof(send_addr);
 
 	bzero(&source_addr, sizeof(source_addr));
 	source_addr.sin_family = AF_INET;
-	source_addr.sin_port = htons(atoi(iniparser_getstring(ini, "alive_in:udp_port", NULL)));
+	source_addr.sin_port = htons(port);
 	source_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	
 	if ((sockfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
@@ -77,11 +77,11 @@ int main(int argc, char *argv[]) {
 		return 0;
 	}
 	
-    wifibroadcast_rx_status_t *t = status_memory_open();
+    //wifibroadcast_rx_status_t *t = status_memory_open();
 	
 	while (1) {
 		ret = recvfrom(sockfd, &status_output, sizeof(status_output), 0, 
-					(struct sockaddr*)&source_addr, &slen);
+					(struct sockaddr*)&source_addr, (socklen_t *)&slen);
 		if (ret > 0) {
 			status_output = ntohl(status_output);
 			if (!status_output) {
