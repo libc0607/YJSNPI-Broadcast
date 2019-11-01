@@ -20,6 +20,14 @@
 #include <time.h>
 #include <sys/resource.h>
 
+// Data frame: ether[0x00:1] == 0x08
+//#define PCAP_FILTER_CHAR "ether[0x00:2] == 0x0802 && ether[0x04:1] == 0xff"
+// RTS Frame: ether[0x00:1] == 0xB4
+#define PCAP_FILTER_CHAR "ether[0x00:2] == 0xB402 && ether[0x04:1] == 0xff"
+// We should use RTS for default.
+
+#define PROGRAM_NAME "rssirx"
+
 // this is where we store a summary of the information from the radiotap header
 typedef struct  {
 	int m_nChannel;
@@ -80,7 +88,7 @@ void open_and_configure_interface(const char *name, monitor_interface_t *interfa
 
 	if (nLinkEncap == DLT_IEEE802_11_RADIO) {
 		interface->n80211HeaderLength = 0x18; // 24 bytes
-		sprintf(szProgram, "ether[0x00:2] == 0x0802 && ether[0x04:1] == 0xff"); // match on frametype, 1st byte of mac (ff) and portnumber (255 = 127 for rssi)
+		sprintf(szProgram, PCAP_FILTER_CHAR); // match on frametype, 1st byte of mac (ff) and portnumber (255 = 127 for rssi)
 	} else {
 		fprintf(stderr, "ERROR: unknown encapsulation on %s! check if monitor mode is supported and enabled\n", name);
 		exit(1);

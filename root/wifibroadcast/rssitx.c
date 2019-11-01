@@ -3,39 +3,93 @@
 
 // Mod by @libc0607
 
+// Usage: ./rssitx config.ini
+/*
+
+[rssitx]
+mode=0	# 0-send packet to air, 1-send to udp, 2-both
+nic=wlan0				// optional, when mode set to 0or2
+udp_ip=127.0.0.1		// optional, when mode set to 1or2
+udp_port=30302			// optional, when mode set to 1or2
+udp_bind_port=30300		// optional, when mode set to 1or2
+wifimode=0				// 0-b/g 1-n
+rate=6					// Mbit(802.11b/g) / mcs index(802.11n/ac)
+ldpc=0					// 802.11n/ac only
+stbc=0
+encrypt=0
+password=1145141919810
+debug=0
+*/
+//
+
+
 #include "lib.h"
 #include "xxtea.h"
+#include <arpa/inet.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
 #include <iniparser.h>
 #include <inttypes.h>
+#include <linux/serial.h>
 #include <net/if.h>
 #include <netinet/ether.h>
 #include <netpacket/packet.h>
 #include <pcap.h>
+#include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
+#include <stropts.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/random.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
-char *ifname = NULL;
-int flagHelp = 0;
+#define PROGRAM_NAME rssitx
 
-int sock=0;
-int socks[5];
+int sockfd;
+int udpfd;
 
 bool no_signal, no_signal_rc;
 int param_encrypt_enable = 0;
 char * param_encrypt_password = NULL;
-	
+struct framedata_s framedata;
+
+static uint8_t u8aRadiotapHeader[] = {
+	0x00, 0x00, // <-- radiotap version
+	0x0c, 0x00, // <- radiotap header length
+	0x04, 0x80, 0x00, 0x00, // <-- radiotap present flags
+	0x00, // datarate (will be overwritten later in packet_header_init)
+	0x00,
+	0x00, 0x00
+};
+
+static uint8_t u8aRadiotapHeader80211n[] = {
+	0x00, 0x00, // <-- radiotap version
+	0x0d, 0x00, // <- radiotap header length
+	0x00, 0x80, 0x08, 0x00, // <-- radiotap present flags (tx flags, mcs)
+	0x00, 0x00, 	// tx-flag
+	0x07, 			// mcs have: bw, gi, fec: 					 8'b00010111
+	0x00,			// mcs: 20MHz bw, long guard interval, ldpc, 8'b00010000
+	0x02,			// mcs index 2 (speed level, will be overwritten later)
+};
+
+static uint8_t u8aIeeeHeader_rts[] = {
+        180, 2, 0, 0, // frame control field (2 bytes), duration (2 bytes)
+        0xff, // 1st byte of IEEE802.11 RA (mac) must be 0xff or something odd (wifi hardware determines broadcast/multicast through odd/even check)
+};
+
 struct framedata_s {
-    uint8_t rt1;
+/*     uint8_t rt1;
     uint8_t rt2;
     uint8_t rt3;
     uint8_t rt4;
@@ -77,7 +131,7 @@ struct framedata_s {
 
     uint8_t ieeeseq1;
     uint8_t ieeeseq2;
-
+ */
     int8_t signal;
     uint32_t lostpackets;
     int8_t signal_rc;
@@ -96,13 +150,12 @@ struct framedata_s {
     uint8_t temp_wrt;
 }  __attribute__ ((__packed__));
 
-struct framedata_s framedata;
-
 static int open_sock (char *ifname) 
 {
     struct sockaddr_ll ll_addr;
     struct ifreq ifr;
-
+	int sock;
+	
     sock = socket (AF_PACKET, SOCK_RAW, 0);
     if (sock == -1) {
 		fprintf(stderr, "Error:\tSocket failed\n");
@@ -144,7 +197,6 @@ static int open_sock (char *ifname)
 
     return sock;
 }
-
 
 void sendRSSI(int sock, telemetry_data_t *td) 
 {
@@ -253,9 +305,8 @@ void sendRSSI(int sock, telemetry_data_t *td)
 	}
 }
 
-
-
-wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void) {
+wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void) 
+{
     int fd = 0;
     fd = shm_open("/wifibroadcast_rx_status_3", O_RDONLY, S_IRUSR | S_IWUSR);
     if (fd < 0) {
@@ -270,7 +321,8 @@ wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void) {
     return (wifibroadcast_rx_status_t*)retval;
 }
 
-wifibroadcast_rx_status_t_rc *telemetry_wbc_status_memory_open_rc(void) {
+wifibroadcast_rx_status_t_rc *telemetry_wbc_status_memory_open_rc(void) 
+{
     int fd = 0;
     fd = shm_open("/wifibroadcast_rx_status_rc", O_RDONLY, S_IRUSR | S_IWUSR);
     if (fd < 0) {
@@ -285,7 +337,8 @@ wifibroadcast_rx_status_t_rc *telemetry_wbc_status_memory_open_rc(void) {
     return (wifibroadcast_rx_status_t_rc*)retval;
 }
 
-wifibroadcast_tx_status_t *telemetry_wbc_status_memory_open_tx(void) {
+wifibroadcast_tx_status_t *telemetry_wbc_status_memory_open_tx(void) 
+{
     int fd = 0;
     fd = shm_open("/wifibroadcast_tx_status_0", O_RDONLY, S_IRUSR | S_IWUSR);
     if (fd < 0) {
@@ -300,7 +353,8 @@ wifibroadcast_tx_status_t *telemetry_wbc_status_memory_open_tx(void) {
     return (wifibroadcast_tx_status_t*)retval;
 }
 
-wifibroadcast_rx_status_t_sysair 	*status_memory_open_sysair() {
+wifibroadcast_rx_status_t_sysair 	*status_memory_open_sysair() 
+{
 	int fd;
 	fd = shm_open("/wifibroadcast_rx_status_sysair", O_RDWR, S_IRUSR | S_IWUSR);
 	if(fd < 0) { 
@@ -315,7 +369,8 @@ wifibroadcast_rx_status_t_sysair 	*status_memory_open_sysair() {
 	return (wifibroadcast_rx_status_t_sysair*)retval;
 }
 
-void telemetry_init(telemetry_data_t *td) {
+void telemetry_init(telemetry_data_t *td) 
+{
 	// init RSSI shared memory
 	td->rx_status = telemetry_wbc_status_memory_open();
 	td->rx_status_rc = telemetry_wbc_status_memory_open_rc();
@@ -333,22 +388,41 @@ void usage(void) {
 		"nic=wlan0\n"
 		"encrypt=1\n"
 		"password=1919810\n\n"
+		"mode=0	# 0-send packet to air, 1-send to udp, 2-both"
+		"udp_ip=127.0.0.1		// optional, when mode set to 1or2"
+		"udp_port=30302			// optional, when mode set to 1or2"
+		"udp_bind_port=30300		// optional, when mode set to 1or2"
+		"wifimode=0				// 0-b/g 1-n"
+		"rate=6					// Mbit(802.11b/g) / mcs index(802.11n/ac)"
+		"ldpc=0					// 802.11n/ac only"
+		"stbc=0"
+		"debug=0"
 		
 	);
     exit(1);
 }
 
+int get_int_from_file (char * filename) 
+{
+	FILE * fp;
+	int ret;
+	
+	fp = fopen (filename, "r");
+	if (NULL == pFile) {
+		perror("ERROR: Could not open %s", filename);
+		exit(EXIT_FAILURE);
+	}
+    fscanf(fp, "%i\n", &ret);
+	fclose(pFile);
+	
+	return ret;
+}
+
 int main (int argc, char *argv[]) 
 {
+	int done = 1, bitrate_kbit, bitrate_measured_kbit, cts;
+
 	setpriority(PRIO_PROCESS, 0, 10);
-
-	int done = 1;
-	FILE * pFile;
-	int bitrate_kbit;
-	int bitrate_measured_kbit;
-	int cts;
-
-//	fprintf(stderr,"RSSI TX started\n");
 	if (argc !=2) {
 		usage();
 	}
@@ -359,47 +433,21 @@ int main (int argc, char *argv[])
 		exit(1);
 	}
 	
-	socks[0] = open_sock((char *)iniparser_getstring(ini, "rssitx:nic", NULL));
+	sockfd = open_sock((char *)iniparser_getstring(ini, "PROGRAM_NAME:nic", NULL));
 		
 	param_encrypt_enable = iniparser_getint(ini, "rssitx:encrypt", 0);
 	if (param_encrypt_enable == 1) {
 		param_encrypt_password = (char *)iniparser_getstring(ini, "rssitx:password", NULL);
 	}
 		
-	pFile = fopen ("/tmp/bitrate_kbit", "r");
-	if (NULL == pFile) {
-		perror("ERROR: Could not open /tmp/bitrate_kbit");
-		exit(EXIT_FAILURE);
-	}
-    fscanf(pFile, "%i\n", &bitrate_kbit);
-//	printf("bitrate_kbit: %i\n", bitrate_kbit);
-	fclose(pFile);
-
-	
-	pFile = fopen ("/tmp/bitrate_measured_kbit", "r");
-	if (NULL == pFile) {
-		perror("ERROR: Could not open /tmp/measured_kbit");
-		exit(EXIT_FAILURE);
-	}
-	fscanf(pFile, "%i\n", &bitrate_measured_kbit);
-//	printf("bitrate_measured_kbit: %i\n", bitrate_measured_kbit);
-	fclose(pFile);
-
-
-	pFile = fopen ("/tmp/cts", "r");
-	if(NULL == pFile) {
-		perror("ERROR: Could not open /tmp/cts");
-		exit(EXIT_FAILURE);
-	}
-	fscanf(pFile, "%i\n", &cts);
-//	printf("cts: %i\n", cts);
-	fclose (pFile);
-
+	bitrate_kbit = get_int_from_file("/tmp/bitrate_kbit");
+	bitrate_measured_kbit = get_int_from_file("/tmp/bitrate_measured_kbit");
+	cts = get_int_from_file("/tmp/cts");
 
 	telemetry_data_t td;
 	telemetry_init(&td);
 
-	framedata.rt1 = 0; // <-- radiotap version
+	/* framedata.rt1 = 0; // <-- radiotap version
 	framedata.rt2 = 0; // <-- radiotap version
 
 	framedata.rt3 = 12; // <- radiotap header length
@@ -415,7 +463,7 @@ int main (int argc, char *argv[])
 	framedata.rt11 = 0; // <-- radiotap stuff
 	framedata.rt12 = 0; // <-- radiotap stuff
 
-	framedata.fc1 = 8; // <-- frame control field 0x08 = 8 data frame (180 = rts frame)
+	framedata.fc1 = 180; // <-- frame control field 0x08 = 8 data frame (180 = rts frame)
 	framedata.fc2 = 2; // <-- frame control field 0x02 = 2
 	framedata.dur1 = 0; // <-- duration
 	framedata.dur2 = 0; // <-- duration
@@ -442,18 +490,10 @@ int main (int argc, char *argv[])
 	framedata.mac3_6 = 0;
 
 	framedata.ieeeseq1 = 0;
-	framedata.ieeeseq2 = 0;
+	framedata.ieeeseq2 = 0; */
 
-	framedata.signal = 0;
-	framedata.lostpackets = 0;
-	framedata.signal_rc = 0;
-	framedata.lostpackets_rc = 0;
-	framedata.cpuload = 0;
-	framedata.temp = 0;
-	framedata.injected_block_cnt = 0;
-	framedata.skipped_fec_cnt = 0;
-	framedata.injection_fail_cnt = 0;
-	framedata.injection_time_block = 0;
+	bzero(&framedata, sizeof(framedata));
+
 
 	framedata.bitrate_kbit = bitrate_kbit;
 	framedata.bitrate_measured_kbit = bitrate_measured_kbit;
