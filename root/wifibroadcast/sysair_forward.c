@@ -1,4 +1,4 @@
-﻿// sysair_forward by libc0607@Github
+// sysair_forward by libc0607@Github
 // send air pi system status to air wrt via udp.
 // this program runs on air pi.
 // usage: sysair_forward config.ini 
@@ -53,8 +53,8 @@ int main(int argc, char *argv[])
 	
 	// Init udp
 	int16_t port = atoi(iniparser_getstring(ini, "sysair_forward:udp_port", NULL));
-	int j = 0;
-	int cardcounter = 0;
+	//int j = 0;
+	//int cardcounter = 0;
 	struct sockaddr_in si_other_rssi;
 	struct sockaddr_in source_addr;	
 	int s_rssi, slen_rssi=sizeof(si_other_rssi);
