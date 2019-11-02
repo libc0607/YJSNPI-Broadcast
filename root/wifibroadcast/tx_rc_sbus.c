@@ -51,10 +51,7 @@ password=1145141919810
 //#include <asm/termios.h>
 #include <sys/ioctl.h>
 
-int sockfd;
-int uartfd;
-int udpfd;
-int urandom_fd;
+#define PROGRAM_NAME "tx_rc_sbus"
 
 static uint8_t u8aRadiotapHeader[] = {
 	0x00, 0x00, // <-- radiotap version
@@ -152,9 +149,9 @@ uint32_t xcrc32 (const unsigned char *buf, int len, unsigned int init)
 void usage(void)
 {
     printf(
-        "tx_rc_sbus by libc0607. GPL2\n"
+        PROGRAM_NAME" by libc0607. GPL2\n"
         "\n"
-        "Usage: tx_rc_sbus config.ini \n"
+        "Usage: "PROGRAM_NAME" config.ini \n"
         "\n"
         "\n");
     exit(1);
@@ -311,10 +308,10 @@ int uart_sbus_init(int fd)
 // return: rtheader_length
 int packet_rtheader_init (int offset, uint8_t *buf, dictionary *ini) 
 {
-	int param_bitrate = iniparser_getint(ini, "tx_rc_sbus:rate", 0);
-	int param_wifimode = iniparser_getint(ini, "tx_rc_sbus:wifimode", 0);
-	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:ldpc", 0): 0;
-	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:stbc", 0): 0;
+	int param_bitrate = iniparser_getint(ini, PROGRAM_NAME":rate", 0);
+	int param_wifimode = iniparser_getint(ini, PROGRAM_NAME":wifimode", 0);
+	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, PROGRAM_NAME":ldpc", 0): 0;
+	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, PROGRAM_NAME":stbc", 0): 0;
 	uint8_t * p_rtheader = (param_wifimode == 1)? u8aRadiotapHeader80211n: u8aRadiotapHeader;
 	size_t rtheader_length = (param_wifimode == 1)? sizeof(u8aRadiotapHeader80211n): sizeof(u8aRadiotapHeader);
 
@@ -386,6 +383,7 @@ int main (int argc, char *argv[])
 	struct framedata_s framedata;
 	uint8_t framedata_body_length = sizeof(framedata);
 	uint8_t buf[128];
+	int sockfd, uartfd, udpfd;
 	bzero(buf, sizeof(buf));
 	
 	// Get ini from file
@@ -398,14 +396,14 @@ int main (int argc, char *argv[])
 	if (argc != 2) {
 		usage();
 	}
-	int param_mode = iniparser_getint(ini, "tx_rc_sbus:mode", 0);
-	int param_retrans = iniparser_getint(ini, "tx_rc_sbus:retrans", 0);
-	int param_debug = iniparser_getint(ini, "tx_rc_sbus:debug", 0); 
-	int param_encrypt = iniparser_getint(ini, "tx_rc_sbus:encrypt", 0);
-	char * param_password = (param_encrypt == 1)? (char *)iniparser_getstring(ini, "tx_rc_sbus:password", NULL): NULL;
+	int param_mode = iniparser_getint(ini, PROGRAM_NAME":mode", 0);
+	int param_retrans = iniparser_getint(ini, PROGRAM_NAME":retrans", 0);
+	int param_debug = iniparser_getint(ini, PROGRAM_NAME":debug", 0); 
+	int param_encrypt = iniparser_getint(ini, PROGRAM_NAME":encrypt", 0);
+	char * param_password = (param_encrypt == 1)? (char *)iniparser_getstring(ini, PROGRAM_NAME":password", NULL): NULL;
 	// init wifi raw socket
 	if (param_mode == 0 || param_mode == 2) {
-		char * nic_name = (char *)iniparser_getstring(ini, "tx_rc_sbus:nic", NULL);
+		char * nic_name = (char *)iniparser_getstring(ini, PROGRAM_NAME":nic", NULL);
 		sockfd = open_sock(nic_name);
 		usleep(20000); // wait a bit 
 	}
@@ -416,14 +414,14 @@ int main (int argc, char *argv[])
 	struct sockaddr_in source_addr;	
 	int slen = sizeof(send_addr);
 	if (param_mode == 1 || param_mode == 2) {
-		port = atoi(iniparser_getstring(ini, "tx_rc_sbus:udp_port", NULL));
+		port = atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_port", NULL));
 		bzero(&send_addr, sizeof(send_addr));
 		send_addr.sin_family = AF_INET;
 		send_addr.sin_port = htons(port);
-		send_addr.sin_addr.s_addr = inet_addr(iniparser_getstring(ini, "tx_rc_sbus:udp_ip", NULL));
+		send_addr.sin_addr.s_addr = inet_addr(iniparser_getstring(ini, PROGRAM_NAME":udp_ip", NULL));
 		bzero(&source_addr, sizeof(source_addr));
 		source_addr.sin_family = AF_INET;
-		source_addr.sin_port = htons(atoi(iniparser_getstring(ini, "tx_rc_sbus:udp_bind_port", NULL)));
+		source_addr.sin_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_bind_port", NULL)));
 		source_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 		if ((udpfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
 			printf("ERROR: Could not create UDP socket!");
@@ -434,7 +432,7 @@ int main (int argc, char *argv[])
 	}
 	
 	// init uart to b100000,8E2
-	uartfd = open( (char *)iniparser_getstring(ini, "tx_rc_sbus:uart", NULL),
+	uartfd = open( (char *)iniparser_getstring(ini, PROGRAM_NAME":uart", NULL),
 					O_RDWR|O_NOCTTY|O_NDELAY);	// not using |O_NONBLOCK now
 	if (uartfd < 0) {
 		fprintf(stderr, "open uart failed!\n"); 
@@ -531,7 +529,6 @@ int main (int argc, char *argv[])
 		close(uartfd);
 	if (param_mode == 1 || param_mode == 2)
 		close(udpfd);
-	close(urandom_fd);
 	iniparser_freedict(ini);
 	return EXIT_SUCCESS;
 }
