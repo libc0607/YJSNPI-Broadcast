@@ -11,7 +11,7 @@
 // udp_listen_port=20393
 // encrypt=0
 // password=1919810
-//
+// debug=0		# won't show in usage() but it should work
 
 /*
  *   This program is free software; you can redistribute it and/or modify
@@ -138,6 +138,35 @@ void open_and_configure_interface(const char *name, monitor_interface_t *interfa
 	}
 
 	interface->selectable_fd = pcap_get_selectable_fd(interface->ppcap);
+}
+
+void dump_memory(void* p, int length, char * tag)
+{
+	int i, j;
+	unsigned char *addr = (unsigned char *)p;
+
+	fprintf(stderr, "\n");
+	fprintf(stderr, "===== Memory dump at %s, length=%d =====", tag, length);
+	fprintf(stderr, "\n");
+
+	for(i = 0; i < 16; i++)
+		fprintf(stderr, "%2x ", i);
+	fprintf(stderr, "\n");
+	for(i = 0; i < 16; i++)
+		fprintf(stderr, "---");
+	fprintf(stderr, "\n");
+
+	for(i = 0; i < (length/16) + 1; i++) {
+		for(j = 0; j < 16; j++) {
+			if (i * 16 + j >= length)
+				break;
+			fprintf(stderr, "%2x ", *(addr + i * 16 + j));
+		}
+		fprintf(stderr, "\n");
+	}
+	for(i = 0; i < 16; i++)
+		fprintf(stderr, "---");
+	fprintf(stderr, "\n\n");
 }
 
 // input: monitor_interface_t *interface
@@ -405,6 +434,7 @@ int main(int argc, char *argv[])
 	
 	param_enc = iniparser_getint(ini, PROGRAM_NAME":encrypt", 0);
 	param_pwd = (param_enc == 1)? (char *)iniparser_getstring(ini, PROGRAM_NAME":password", NULL): NULL;
+	param_dbg = iniparser_getint(ini, PROGRAM_NAME":debug", 0);
 	
 	telemetry_init(&td);
 	td.rx_status->wifi_adapter_cnt = 1;
@@ -424,6 +454,11 @@ int main(int argc, char *argv[])
 			decrypt_payload(raw, raw_len, param_enc, param_pwd, buf, &dec_len);
 			fill_buf_to_payload(buf, &seqno, &td);
 			fprintf(stderr, "!");
+			if (param_dbg) {
+				fprintf(stderr, "seqno = %d \n", seqno);
+				dump_memory(raw, raw_len, "Wi-Fi recv raw - memory dump");
+				dump_memory(buf, dec_len, "Wi-Fi recv decrypted - memory dump");
+			}
 		}
 		if (FD_ISSET(udpfd, &readset)) {
 			if (0 >= receive_packet_udp(udpfd, (struct sockaddr *)&addr, sizeof(raw), raw, &raw_len))
@@ -431,6 +466,11 @@ int main(int argc, char *argv[])
 			decrypt_payload(raw, raw_len, param_enc, param_pwd, buf, &dec_len);
 			fill_buf_to_payload(buf, &seqno, &td);
 			fprintf(stderr, "?");
+			if (param_dbg) {
+				fprintf(stderr, "seqno = %d \n", seqno);
+				dump_memory(raw, raw_len, "UDP recv raw - memory dump");
+				dump_memory(buf, dec_len, "UDP recv decrypted - memory dump");
+			}
 		}
 	}
 	
