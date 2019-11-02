@@ -543,8 +543,8 @@ int main (int argc, char *argv[])
 	
 	// fill framedata (init)
 	bzero(&framedata, sizeof(framedata));
-	framedata.bitrate_kbit = get_int_from_file("/tmp/bitrate_kbit");
-	framedata.bitrate_measured_kbit = get_int_from_file("/tmp/bitrate_measured_kbit");
+	framedata.bitrate_kbit = htons(get_int_from_file("/tmp/bitrate_kbit"));
+	framedata.bitrate_measured_kbit = htons(get_int_from_file("/tmp/bitrate_measured_kbit"));
 	framedata.cts = get_int_from_file("/tmp/cts");
 	
 	while (1) {
