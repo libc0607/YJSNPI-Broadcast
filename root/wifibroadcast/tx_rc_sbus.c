@@ -316,39 +316,16 @@ int packet_rtheader_init (int offset, uint8_t *buf, dictionary *ini)
 	size_t rtheader_length = (param_wifimode == 1)? sizeof(u8aRadiotapHeader80211n): sizeof(u8aRadiotapHeader);
 
 	// set args
-	if (param_wifimode == 0) {	// 802.11g
+	if (param_wifimode == 0) {	
+		// 802.11g
 		u8aRadiotapHeader[8] = bitrate_to_rtap8(param_bitrate);
-	} else if (param_wifimode == 1) {					// 802.11n
-		if (param_ldpc == 0) {
-			u8aRadiotapHeader80211n[10] &= (~0x10);
-			u8aRadiotapHeader80211n[11] &= (~0x10);
-			u8aRadiotapHeader80211n[12] = (uint8_t)param_bitrate;
-		} else {
-			u8aRadiotapHeader80211n[10] |= 0x10;
-			u8aRadiotapHeader80211n[11] |= 0x10;
-			u8aRadiotapHeader80211n[12] = (uint8_t)param_bitrate;
-		}
-		switch (param_stbc) {
-		case 1: 
-			u8aRadiotapHeader80211n[10] |= 0x20;
-			u8aRadiotapHeader80211n[11] |= (0x1 << 5);
-		break; 
-		case 2:
-			u8aRadiotapHeader80211n[10] |= 0x20;
-			u8aRadiotapHeader80211n[11] |= (0x2 << 5);
-		break;
-		case 3: 
-			u8aRadiotapHeader80211n[10] |= 0x20;
-			u8aRadiotapHeader80211n[11] |= (0x3 << 5);
-		break;
-		case 0:
-		default:
-			// clear all bits
-			u8aRadiotapHeader80211n[10] &= (~0x20);
-			u8aRadiotapHeader80211n[11] &= (~0x60);
-		break;
-		}
-		
+	} else if (param_wifimode == 1) {					
+		// 802.11n
+		u8aRadiotapHeader80211n[10] = (param_ldpc)? (u8aRadiotapHeader80211n[10] | 0x10): (u8aRadiotapHeader80211n[10] & (~0x10));
+		u8aRadiotapHeader80211n[10] = (param_stbc)? (u8aRadiotapHeader80211n[10] | 0x20): (u8aRadiotapHeader80211n[10] & (~0x20));											
+		u8aRadiotapHeader80211n[11] = (param_ldpc)? (u8aRadiotapHeader80211n[11] | 0x10): (u8aRadiotapHeader80211n[11] & (~0x10));												
+		u8aRadiotapHeader80211n[11] = (param_stbc)? (u8aRadiotapHeader80211n[11] | (param_stbc << 5)): (u8aRadiotapHeader80211n[11] & (~0x60));
+		u8aRadiotapHeader80211n[12] = (uint8_t)param_bitrate;	
 	}
 	// copy radiotap header
 	memcpy(buf+offset, p_rtheader, rtheader_length);
