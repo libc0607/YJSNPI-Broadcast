@@ -376,7 +376,7 @@ int encrypt_payload(uint8_t * buf, size_t length, int encrypt_en, char * pwd)
 	// overwrite buffer
 	memcpy(buf, enc_data, enc_len);
 	if (1 == encrypt_en) {
-		free(p_send_data);
+		free(enc_data);
 	}
 	return enc_len;
 }
