@@ -81,22 +81,28 @@ static uint8_t u8aIeeeHeader_rts[] = {
 };
 
 struct framedata_s {
-    int8_t signal;
-    uint32_t lostpackets;
-    int8_t signal_rc;
-    uint32_t lostpackets_rc;
-    uint8_t cpuload;
-    uint8_t temp;
-    uint32_t injected_block_cnt;
-    uint32_t skipped_fec_cnt;
-    uint32_t injection_fail_cnt;
-    long long injection_time_block;
-    uint16_t bitrate_kbit;
-    uint16_t bitrate_measured_kbit;
-    uint8_t cts;
-    uint8_t undervolt;
+	// 0
+	int8_t signal;
+	int8_t signal_rc;
+	uint8_t cpuload;
+	uint8_t temp;	
+	uint8_t cts;
+	uint8_t undervolt;
 	uint8_t cpuload_wrt;
-    uint8_t temp_wrt;
+	uint8_t temp_wrt;
+	// 8
+	uint16_t bitrate_kbit;
+	uint16_t bitrate_measured_kbit;
+	uint32_t lostpackets;
+	// 16
+	uint32_t lostpackets_rc;
+	uint32_t injected_block_cnt;
+	uint32_t skipped_fec_cnt;
+	uint32_t injection_fail_cnt;
+	// 32
+	uint64_t injection_time_block;
+	uint64_t seqno;
+	// 48
 }  __attribute__ ((__packed__));
 
 static int open_sock (char *ifname) 
@@ -502,6 +508,7 @@ int main (int argc, char *argv[])
 	int sockfd, udpfd, cpu_usage;	
 	struct sockaddr_in send_addr;
 	long double used1, used2, all1, all2; 
+	uint64_t seqno;
 	
 	setpriority(PRIO_PROCESS, 0, 10);
 	if (argc !=2) {
@@ -546,6 +553,7 @@ int main (int argc, char *argv[])
 	framedata.bitrate_kbit = htons(get_int_from_file("/tmp/bitrate_kbit"));
 	framedata.bitrate_measured_kbit = htons(get_int_from_file("/tmp/bitrate_measured_kbit"));
 	framedata.cts = get_int_from_file("/tmp/cts");
+	seqno = 0;
 	
 	while (1) {
 		// 0. get cpu usage (1/2)
@@ -559,6 +567,8 @@ int main (int argc, char *argv[])
 		// 4. fill framedata
 		fill_td_to_rssi_packet(&framedata, &td);
 		framedata.cpuload_wrt = htonl(cpu_usage);
+		framedata.seqno = htobe64(seqno);
+		seqno++;
 		// 5. copy data to send buffer
 		memcpy(buf+full_header_len, (uint8_t *)&framedata, sizeof(framedata));
 		// 6. encrypt
