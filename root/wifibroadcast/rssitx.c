@@ -19,6 +19,7 @@ stbc=0
 encrypt=0
 password=1145141919810
 debug=0		# 0-off 1-fprintf 2-hexdump
+rssifreq=3	# 3 new packets per second
 */
 //
 
@@ -245,10 +246,10 @@ void dump_memory(void* p, int length, char * tag)
 	fprintf(stderr, "\n\n");
 }
 
-int get_cpu_usage_percent() 
+void get_cpu_usage(long double *used, long double *all) 
 {
 	FILE * fp;
-	long double a[4], b[4];
+	long double a[4];
 	
 	fp = fopen("/proc/stat", "r");
 	if (NULL == fp) {
@@ -258,17 +259,17 @@ int get_cpu_usage_percent()
 	fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&a[0],&a[1],&a[2],&a[3]);
 	fclose(fp);
 	
-	usleep(1000000/CPU_USAGE_FREQ); 
+	*used = a[0]+a[1]+a[2];
+	*all = a[0]+a[1]+a[2]+a[3];
+
+	return;
 	
-	fp = fopen("/proc/stat","r");
-	fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&b[0],&b[1],&b[2],&b[3]);
-	fclose(fp);
-	
-	return  100 * (
-		( (b[0]+b[1]+b[2]) - (a[0]+a[1]+a[2]) ) 
-	/ //-------------------------------------------
-	( (b[0]+b[1]+b[2]+b[3]) - (a[0]+a[1]+a[2]+a[3]) )
-	) ;
+/* 	cpu usage percent =   
+	100 * (
+		( (b[0]+b[1]+b[2]) - (a[0]+a[1]+a[2]) ) 			used1 - used2
+	/ //-------------------------------------------    == -----------------
+	( (b[0]+b[1]+b[2]+b[3]) - (a[0]+a[1]+a[2]+a[3]) )		 all1 - all2
+	) ; */
 
 }
 
@@ -284,7 +285,7 @@ int encrypt_payload(uint8_t * buf, size_t length, int encrypt_en, char * pwd)
 	return enc_len;
 }
 
-void fill_rssi_packet(struct framedata_s * framedata, telemetry_data_t *td) 
+void fill_td_to_rssi_packet(struct framedata_s * framedata, telemetry_data_t *td) 
 {
 	if (td->rx_status == NULL) 
 		return;
@@ -297,13 +298,21 @@ void fill_rssi_packet(struct framedata_s * framedata, telemetry_data_t *td)
 	framedata->skipped_fec_cnt = htonl(td->tx_status->skipped_fec_cnt);
 	framedata->injection_fail_cnt = htonl(td->tx_status->injection_fail_cnt);
 	framedata->injection_time_block = htobe64(td->tx_status->injection_time_block);
-	framedata->cpuload_wrt = htonl(get_cpu_usage_percent());
 	framedata->temp_wrt = htonl(get_int_from_file("/tmp/wbc_temp") / 1000);
 	framedata->undervolt = td->sysair_status->undervolt;
 	framedata->cpuload = td->sysair_status->cpuload;
 	framedata->temp = td->sysair_status->temp;
 	
 	return;
+}
+
+int cal_cpu_usage_percent(long double used1, long double used2, long double all1, long double all2)
+{
+	return (100 * (
+			(used1 - used2) 			
+	/ //-------------------------
+			 (all1 - all2)		
+	));
 }
 
 int send_packet_udp(int fd, uint8_t *buf, size_t len, struct sockaddr *addr) 
@@ -331,10 +340,10 @@ int send_packet_wifi(int fd, uint8_t *buf, size_t len)
 // return: rtheader_length
 int packet_rtheader_init_by_conf (int offset, uint8_t *buf, dictionary *ini) 
 {
-	int param_bitrate = iniparser_getint(ini, "tx_rc_sbus:rate", 0);
-	int param_wifimode = iniparser_getint(ini, "tx_rc_sbus:wifimode", 0);
-	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:ldpc", 0): 0;
-	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:stbc", 0): 0;
+	int param_bitrate = iniparser_getint(ini, "PROGRAM_NAME:rate", 0);
+	int param_wifimode = iniparser_getint(ini, "PROGRAM_NAME:wifimode", 0);
+	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, "PROGRAM_NAME:ldpc", 0): 0;
+	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, "PROGRAM_NAME:stbc", 0): 0;
 	uint8_t * p_rtheader = (param_wifimode == 1)? u8aRadiotapHeader80211n: u8aRadiotapHeader;
 	size_t rtheader_length = (param_wifimode == 1)? sizeof(u8aRadiotapHeader80211n): sizeof(u8aRadiotapHeader);
 
@@ -489,11 +498,12 @@ int main (int argc, char *argv[])
 {
 	uint8_t buf[512];
 	int encryped_framedata_len, full_header_len, rtheader_length, ieeeheader_length;
-	int param_retrans, param_debug, param_mode, i;
+	int param_retrans, param_debug, param_mode, param_rssifreq, i;
 	struct framedata_s framedata;
 	telemetry_data_t td;
-	int sockfd, udpfd;
+	int sockfd, udpfd, cpu_usage;	
 	struct sockaddr_in send_addr;
+	long double used1, used2, all1, all2; 
 	
 	setpriority(PRIO_PROCESS, 0, 10);
 	if (argc !=2) {
@@ -508,10 +518,12 @@ int main (int argc, char *argv[])
 		exit(1);
 	}
 	
-	// open socket
 	param_mode = iniparser_getint(ini, "PROGRAM_NAME:mode", 0);
 	param_retrans = iniparser_getint(ini, "PROGRAM_NAME:retrans", 0);
 	param_debug = iniparser_getint(ini, "PROGRAM_NAME:debug", 0); 
+	param_rssifreq = iniparser_getint(ini, "PROGRAM_NAME:rssifreq", 0); 
+	
+	// open socket
 	// wi-fi
 	if (param_mode == 0 || param_mode == 2) {
 		sockfd = open_wifi_sock_by_conf(ini);
@@ -521,9 +533,7 @@ int main (int argc, char *argv[])
 		udpfd = open_udp_sock_by_conf(ini);
 		set_udp_send_addr_by_conf(&send_addr, ini);
 	}
-
-
-
+	
 	telemetry_init(&td);
 	bzero(buf, sizeof(buf));
 	
@@ -540,14 +550,22 @@ int main (int argc, char *argv[])
 	framedata.cts = get_int_from_file("/tmp/cts");
 	
 	while (1) {
-		// 1. fill framedata
-		// note that fill_rssi_packet() contains usleep()
-		fill_rssi_packet(&framedata, &td);
-		// 2. copy data to send buffer
+		// 0. get cpu usage (1/2)
+		get_cpu_usage(&used1, &all1);
+		// 1. sleep
+		usleep(1000000/param_rssifreq);
+		// 2. get cpu usage (2/2)
+		get_cpu_usage(&used2, &all2);
+		// 3. cal cpu usage 
+		cpu_usage = cal_cpu_usage_percent(used1, used2, all1, all2);
+		// 4. fill framedata
+		fill_td_to_rssi_packet(&framedata, &td);
+		framedata.cpuload_wrt = htonl(cpu_usage);
+		// 5. copy data to send buffer
 		memcpy(buf+full_header_len, (uint8_t *)&framedata, sizeof(framedata));
-		// 3. encrypt
+		// 6. encrypt
 		encryped_framedata_len = encrypt_payload_by_conf_unsafe(buf+full_header_len, sizeof(framedata), ini);
-		// 4. send
+		// 7. send
 		for (i=0; i<param_retrans; i++) {
 			switch (param_mode) {
 			case 0:
@@ -566,7 +584,7 @@ int main (int argc, char *argv[])
 			}
 			usleep(1500 * (i+1));
 		}
-		// 5. debug
+		// 8. debug
 		if (param_debug) 
 			dump_memory(buf, full_header_len+encryped_framedata_len, "Full buffer");
 	}
