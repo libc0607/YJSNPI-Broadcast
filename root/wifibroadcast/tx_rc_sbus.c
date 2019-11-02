@@ -375,6 +375,9 @@ int encrypt_payload(uint8_t * buf, size_t length, int encrypt_en, char * pwd)
 	uint8_t * enc_data = xxtea_encrypt(buf, length, pwd, &enc_len);
 	// overwrite buffer
 	memcpy(buf, enc_data, enc_len);
+	if (1 == encrypt_en) {
+		free(p_send_data);
+	}
 	return enc_len;
 }
 
