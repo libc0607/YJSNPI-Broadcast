@@ -99,6 +99,7 @@ typedef struct {
     wifibroadcast_rx_status_t *rx_status;
     wifibroadcast_rx_status_t_rc *rx_status_rc;
     wifibroadcast_tx_status_t *tx_status;
+	wifibroadcast_rx_status_t_sysair *sysair_status;
 } telemetry_data_t;
 
 wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void);
