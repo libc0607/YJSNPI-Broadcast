@@ -393,7 +393,7 @@ int open_udp_binded_sock_by_conf(dictionary *ini, struct sockaddr_in * addr)
 
 int main(int argc, char *argv[]) 
 {
-	int udpfd = 0, param_enc, param_mode;
+	int udpfd = 0, param_enc, param_mode, param_dbg;
 	char *param_pwd;
 	char *param_nic;
 	struct timeval to;
@@ -455,7 +455,7 @@ int main(int argc, char *argv[])
 			fill_buf_to_payload(buf, &seqno, &td);
 			fprintf(stderr, "!");
 			if (param_dbg) {
-				fprintf(stderr, "seqno = %d \n", seqno);
+				fprintf(stderr, "seqno = %ld \n", seqno);
 				dump_memory(raw, raw_len, "Wi-Fi recv raw - memory dump");
 				dump_memory(buf, dec_len, "Wi-Fi recv decrypted - memory dump");
 			}
@@ -467,7 +467,7 @@ int main(int argc, char *argv[])
 			fill_buf_to_payload(buf, &seqno, &td);
 			fprintf(stderr, "?");
 			if (param_dbg) {
-				fprintf(stderr, "seqno = %d \n", seqno);
+				fprintf(stderr, "seqno = %ld \n", seqno);
 				dump_memory(raw, raw_len, "UDP recv raw - memory dump");
 				dump_memory(buf, dec_len, "UDP recv decrypted - memory dump");
 			}
