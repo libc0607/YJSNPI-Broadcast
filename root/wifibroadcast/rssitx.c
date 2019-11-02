@@ -18,7 +18,7 @@ ldpc=0					// 802.11n/ac only
 stbc=0
 encrypt=0
 password=1145141919810
-debug=0
+debug=0		# 0-off 1-fprintf 2-hexdump
 */
 //
 
@@ -55,14 +55,7 @@ debug=0
 #include <unistd.h>
 
 #define PROGRAM_NAME rssitx
-
-int sockfd;
-int udpfd;
-
-bool no_signal, no_signal_rc;
-int param_encrypt_enable = 0;
-char * param_encrypt_password = NULL;
-struct framedata_s framedata;
+#define CPU_USAGE_FREQ 3	// 3Hz
 
 static uint8_t u8aRadiotapHeader[] = {
 	0x00, 0x00, // <-- radiotap version
@@ -89,49 +82,6 @@ static uint8_t u8aIeeeHeader_rts[] = {
 };
 
 struct framedata_s {
-/*     uint8_t rt1;
-    uint8_t rt2;
-    uint8_t rt3;
-    uint8_t rt4;
-    uint8_t rt5;
-    uint8_t rt6;
-    uint8_t rt7;
-    uint8_t rt8;
-
-    uint8_t rt9;
-    uint8_t rt10;
-    uint8_t rt11;
-    uint8_t rt12;
-
-    uint8_t fc1;
-    uint8_t fc2;
-    uint8_t dur1;
-    uint8_t dur2;
-
-    uint8_t mac1_1; // Port
-    uint8_t mac1_2;
-    uint8_t mac1_3;
-    uint8_t mac1_4;
-    uint8_t mac1_5;
-    uint8_t mac1_6;
-
-    uint8_t mac2_1;
-    uint8_t mac2_2;
-    uint8_t mac2_3;
-    uint8_t mac2_4;
-    uint8_t mac2_5;
-    uint8_t mac2_6;
-
-    uint8_t mac3_1;
-    uint8_t mac3_2;
-    uint8_t mac3_3;
-    uint8_t mac3_4;
-    uint8_t mac3_5;
-    uint8_t mac3_6;
-
-    uint8_t ieeeseq1;
-    uint8_t ieeeseq2;
- */
     int8_t signal;
     uint32_t lostpackets;
     int8_t signal_rc;
@@ -198,111 +148,243 @@ static int open_sock (char *ifname)
     return sock;
 }
 
-void sendRSSI(int sock, telemetry_data_t *td) 
+int open_wifi_sock_by_conf(dictionary *ini)
 {
-	if (td->rx_status != NULL) {
-		long double a[4], b[4];
-		FILE *fp;
+	return open_sock((char *)iniparser_getstring(ini, "PROGRAM_NAME:nic", NULL));
+}
 
-		int best_dbm = -127;
-		int best_dbm_rc = -127;
-		int cardcounter = 0;
-		//int number_cards = td->rx_status->wifi_adapter_cnt;
-		int number_cards_rc = td->rx_status_rc->wifi_adapter_cnt;
-
-		no_signal_rc=true;
-		for (cardcounter=0; cardcounter<number_cards_rc; ++cardcounter) {
-		    if (td->rx_status_rc->adapter[cardcounter].signal_good == 1) { 
-				printf("card[%i] rc signal good\n",cardcounter); 
-			}
-		    printf("dbm_rc[%i]: %d\n",cardcounter, td->rx_status_rc->adapter[cardcounter].current_signal_dbm);
-			if (td->rx_status_rc->adapter[cardcounter].signal_good == 1) {
-				if (best_dbm_rc < td->rx_status_rc->adapter[cardcounter].current_signal_dbm) 
-					best_dbm_rc = td->rx_status_rc->adapter[cardcounter].current_signal_dbm;
-		    }
-		    if (td->rx_status_rc->adapter[cardcounter].signal_good == 1) 
-				no_signal_rc = false;
-			}
-
-		if (no_signal_rc == false) {
-			printf("rc signal good   "); 
-		}
-		printf("best_dbm_rc:%d\n", best_dbm_rc);
-
-		if (no_signal == false) {
-		    framedata.signal = best_dbm;
-		} else {
-		    framedata.signal = -127;
-		}
-		if (no_signal_rc == false) {
-		    framedata.signal_rc = best_dbm_rc;
-		} else {
-		    framedata.signal_rc = -127;
-		}
-		framedata.lostpackets = td->rx_status->lost_packet_cnt;
-		framedata.lostpackets_rc = td->rx_status_rc->lost_packet_cnt;
-
-		framedata.injected_block_cnt = td->tx_status->injected_block_cnt;
-		framedata.skipped_fec_cnt = td->tx_status->skipped_fec_cnt;
-		framedata.injection_fail_cnt = td->tx_status->injection_fail_cnt;
-		framedata.injection_time_block = td->tx_status->injection_time_block;
-
-		fp = fopen("/proc/stat","r");
-		fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&a[0],&a[1],&a[2],&a[3]);
-		fclose(fp);
-		usleep(333333); // send about 3 times per second
-		fp = fopen("/proc/stat","r");
-		fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&b[0],&b[1],&b[2],&b[3]);
-		fclose(fp);
-		framedata.cpuload_wrt = (((b[0]+b[1]+b[2]) - (a[0]+a[1]+a[2])) / ((b[0]+b[1]+b[2]+b[3]) - (a[0]+a[1]+a[2]+a[3]))) * 100;
-
-		// Do not send temp on OpenWrt by default		
-		int temp_wrt = 0;
-		fp = fopen("/tmp/wbc_temp","r");
-		if (fp) {
-			fscanf(fp,"%d",&temp_wrt);
-			fclose(fp);
-			fprintf(stderr,"temp: %d\n",temp_wrt/1000);	
-		}
-		framedata.temp_wrt = temp_wrt / 1000;
-
-	}
-
-//	printf("signal: %d\n", framedata.signal);
-//	printf("skipped fec %d\n", td->tx_status->skipped_fec_cnt);
-//	printf("injection time: %lld\n", td->tx_status->injection_time_block);
-//	printf("injection time: %lld\n", td->tx_status->injection_time_block);
-
-//	fprintf(stdout,"\t\t%d blocks injected, injection time per block %lldus, %d fecs skipped, %d packet injections failed.          \r", td->tx_status->injected_block_cnt,td->tx_status->injection_time_block,td->tx_status->skipped_fec_cnt,td->tx_status->injection_fail_cnt);
-
-	printf("signal_rc: %d\n", framedata.signal_rc);
-//	printf("lostpackets: %d\n", framedata.lostpackets);
-//	printf("lostpackets_rc: %d\n", framedata.lostpackets_rc);
-
-	// encrypt packet if needed
-	uint8_t * p_send_data = NULL;
-	size_t send_data_length;
-	if (param_encrypt_enable) {
-		p_send_data = xxtea_encrypt(&framedata, sizeof(framedata), param_encrypt_password, &send_data_length);
-	} else {
-		p_send_data = (uint8_t *)&framedata;
-		send_data_length = sizeof(framedata);
-	}
+int open_udp_sock_by_conf(dictionary *ini) 
+{
+	struct sockaddr_in source_addr;
+	int udpfd;
 	
-	// send three times with different delay in between to increase robustness against packetloss
-	if (write(socks[0], p_send_data, send_data_length) < 0 ) 
-		fprintf(stderr, "!");
-	usleep(1500);
-	if (write(socks[0], p_send_data, send_data_length) < 0 ) 
-		fprintf(stderr, "!");
-	usleep(2000);
-	if (write(socks[0], p_send_data, send_data_length) < 0 ) 
+	bzero(&source_addr, sizeof(source_addr));
+	source_addr.sin_family = AF_INET;
+	source_addr.sin_port = htons(atoi(iniparser_getstring(ini, "PROGRAM_NAME:udp_bind_port", NULL)));
+	source_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	
+	if ((udpfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
+		printf("ERROR: Could not create UDP socket!");
+	if (-1 == bind(udpfd, (struct sockaddr*)&source_addr, sizeof(source_addr))) {
+		fprintf(stderr, "Bind UDP port failed.\n");
+		exit(0);
+	}
+	return udpfd;
+}
+
+void set_udp_send_addr_by_conf(struct sockaddr_in * addr, dictionary *ini)
+{
+	bzero(&addr, sizeof(addr));
+	addr->sin_family = AF_INET;
+	addr->sin_port = htons(atoi(iniparser_getstring(ini, "PROGRAM_NAME:udp_port", NULL)));
+	addr->sin_addr.s_addr = inet_addr((char *)iniparser_getstring(ini, "PROGRAM_NAME:udp_ip", NULL));
+}
+
+int get_int_from_file (char * filename) 
+{
+	FILE * fp;
+	int ret;
+	
+	fp = fopen (filename, "r");
+	if (NULL == fp) {
+		fprintf(stderr, "ERROR: Could not open %s", filename);
+		exit(EXIT_FAILURE);
+	}
+    fscanf(fp, "%i\n", &ret);
+	fclose(fp);
+	
+	return ret;
+}
+
+uint8_t bitrate_to_rtap8 (int bitrate) 
+{
+	uint8_t ret;
+	switch (bitrate) {
+		case  1: ret=0x02; break;
+		case  2: ret=0x04; break;
+		case  5: ret=0x0b; break;
+		case  6: ret=0x0c; break;
+		case 11: ret=0x16; break;
+		case 12: ret=0x18; break;
+		case 18: ret=0x24; break;
+		case 24: ret=0x30; break;
+		case 36: ret=0x48; break;
+		case 48: ret=0x60; break;
+		case 54: ret=0x6C; break;
+		default: fprintf(stderr, "ERROR: Wrong or no data rate specified\n"); exit(1); break;
+	}
+	return ret;
+}
+
+void dump_memory(void* p, int length, char * tag)
+{
+	int i, j;
+	unsigned char *addr = (unsigned char *)p;
+
+	fprintf(stderr, "\n");
+	fprintf(stderr, "===== Memory dump at %s, length=%d =====", tag, length);
+	fprintf(stderr, "\n");
+
+	for(i = 0; i < 16; i++)
+		fprintf(stderr, "%2x ", i);
+	fprintf(stderr, "\n");
+	for(i = 0; i < 16; i++)
+		fprintf(stderr, "---");
+	fprintf(stderr, "\n");
+
+	for(i = 0; i < (length/16) + 1; i++) {
+		for(j = 0; j < 16; j++) {
+			if (i * 16 + j >= length)
+				break;
+			fprintf(stderr, "%2x ", *(addr + i * 16 + j));
+		}
+		fprintf(stderr, "\n");
+	}
+	for(i = 0; i < 16; i++)
+		fprintf(stderr, "---");
+	fprintf(stderr, "\n\n");
+}
+
+int get_cpu_usage_percent() 
+{
+	FILE * fp;
+	long double a[4], b[4];
+	
+	fp = fopen("/proc/stat", "r");
+	if (NULL == fp) {
+		perror("ERROR: Could not open /proc/stat");
+		exit(EXIT_FAILURE);
+	}
+	fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&a[0],&a[1],&a[2],&a[3]);
+	fclose(fp);
+	
+	usleep(1000000/CPU_USAGE_FREQ); 
+	
+	fp = fopen("/proc/stat","r");
+	fscanf(fp,"%*s %Lf %Lf %Lf %Lf",&b[0],&b[1],&b[2],&b[3]);
+	fclose(fp);
+	
+	return  100 * (
+		( (b[0]+b[1]+b[2]) - (a[0]+a[1]+a[2]) ) 
+	/ //-------------------------------------------
+	( (b[0]+b[1]+b[2]+b[3]) - (a[0]+a[1]+a[2]+a[3]) )
+	) ;
+
+}
+
+int encrypt_payload(uint8_t * buf, size_t length, int encrypt_en, char * pwd) 
+{
+	if (0 == encrypt_en) {
+		return length;
+	}
+	size_t enc_len;
+	uint8_t * enc_data = xxtea_encrypt(buf, length, pwd, &enc_len);
+	// overwrite buffer
+	memcpy(buf, enc_data, enc_len);
+	return enc_len;
+}
+
+void fill_rssi_packet(struct framedata_s * framedata, telemetry_data_t *td) 
+{
+	if (td->rx_status == NULL) 
+		return;
+	
+	framedata->signal = (td->rx_status->adapter[0].signal_good == 1)? td->rx_status->adapter[0].current_signal_dbm: -127;
+	framedata->signal_rc = (td->rx_status_rc->adapter[0].signal_good == 1)? td->rx_status_rc->adapter[0].current_signal_dbm: -127;
+	framedata->lostpackets = htonl(td->rx_status->lost_packet_cnt);
+	framedata->lostpackets_rc = htonl(td->rx_status_rc->lost_packet_cnt);
+	framedata->injected_block_cnt = htonl(td->tx_status->injected_block_cnt);
+	framedata->skipped_fec_cnt = htonl(td->tx_status->skipped_fec_cnt);
+	framedata->injection_fail_cnt = htonl(td->tx_status->injection_fail_cnt);
+	framedata->injection_time_block = htobe64(td->tx_status->injection_time_block);
+	framedata->cpuload_wrt = htonl(get_cpu_usage_percent());
+	framedata->temp_wrt = htonl(get_int_from_file("/tmp/wbc_temp") / 1000);
+	framedata->undervolt = td->sysair_status->undervolt;
+	framedata->cpuload = td->sysair_status->cpuload;
+	framedata->temp = td->sysair_status->temp;
+	
+	return;
+}
+
+int send_packet_udp(int fd, uint8_t *buf, size_t len, struct sockaddr *addr) 
+{
+	int ret, slen = sizeof(addr);
+	
+	ret = sendto(fd, buf, len, 0, addr, slen);
+	if (ret == -1) 
+		fprintf(stderr, "?");
+	
+	return ret;	
+}
+
+int send_packet_wifi(int fd, uint8_t *buf, size_t len) 
+{
+	int ret;
+	
+	ret = write(fd, buf, len);
+	if (ret < 0) 
 		fprintf(stderr, "!");
 	
-	// free memory if encrypt enabled
-	if (param_encrypt_enable) {
-		free(p_send_data);
+	return ret;
+}
+
+// return: rtheader_length
+int packet_rtheader_init_by_conf (int offset, uint8_t *buf, dictionary *ini) 
+{
+	int param_bitrate = iniparser_getint(ini, "tx_rc_sbus:rate", 0);
+	int param_wifimode = iniparser_getint(ini, "tx_rc_sbus:wifimode", 0);
+	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:ldpc", 0): 0;
+	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, "tx_rc_sbus:stbc", 0): 0;
+	uint8_t * p_rtheader = (param_wifimode == 1)? u8aRadiotapHeader80211n: u8aRadiotapHeader;
+	size_t rtheader_length = (param_wifimode == 1)? sizeof(u8aRadiotapHeader80211n): sizeof(u8aRadiotapHeader);
+
+	// set args
+	if (param_wifimode == 0) {	
+		// 802.11g
+		u8aRadiotapHeader[8] = bitrate_to_rtap8(param_bitrate);
+	} else if (param_wifimode == 1) {					
+		// 802.11n
+		u8aRadiotapHeader80211n[10] = (param_ldpc)? (u8aRadiotapHeader80211n[10] | 0x10): (u8aRadiotapHeader80211n[10] & (~0x10));
+		u8aRadiotapHeader80211n[10] = (param_stbc)? (u8aRadiotapHeader80211n[10] | 0x20): (u8aRadiotapHeader80211n[10] & (~0x20));											
+		u8aRadiotapHeader80211n[11] = (param_ldpc)? (u8aRadiotapHeader80211n[11] | 0x10): (u8aRadiotapHeader80211n[11] & (~0x10));												
+		u8aRadiotapHeader80211n[11] = (param_stbc)? (u8aRadiotapHeader80211n[11] | (param_stbc << 5)): (u8aRadiotapHeader80211n[11] & (~0x60));
+		u8aRadiotapHeader80211n[12] = (uint8_t)param_bitrate;	
 	}
+	// copy radiotap header
+	memcpy(buf+offset, p_rtheader, rtheader_length);
+	return rtheader_length;
+}
+
+// return: ieeeheader_length
+int packet_ieeeheader_init_by_conf (int offset, uint8_t * buf, dictionary *ini)
+{
+	// default rts frame
+	memcpy(buf+offset, u8aIeeeHeader_rts, sizeof(u8aIeeeHeader_rts));
+	return sizeof(u8aIeeeHeader_rts);
+}
+
+// Note: this is a unsafe function
+// the encryped data will be write to buf directly and the data size will be larger
+// you should make sure that the buf has at least (length+8bytes) spaces to keep it safe
+int encrypt_payload_by_conf_unsafe(uint8_t * buf, size_t length, dictionary *ini) 
+{
+	int encrypt_en;
+	char * pwd;
+	size_t enc_len;
+	uint8_t * enc_data;
+	
+	encrypt_en = iniparser_getint(ini, "PROGRAM_NAME:encrypt", 0);
+	pwd = (encrypt_en == 1)? (char *)iniparser_getstring(ini, "PROGRAM_NAME:password", NULL): NULL;
+	if (0 == encrypt_en) 
+		return length;
+
+	enc_data = xxtea_encrypt(buf, length, pwd, &enc_len);
+	// unsafe: overwrite buffer
+	memcpy(buf, enc_data, enc_len);
+	if (1 == encrypt_en) 
+		free(enc_data);
+	
+	return enc_len;
 }
 
 wifibroadcast_rx_status_t *telemetry_wbc_status_memory_open(void) 
@@ -353,7 +435,7 @@ wifibroadcast_tx_status_t *telemetry_wbc_status_memory_open_tx(void)
     return (wifibroadcast_tx_status_t*)retval;
 }
 
-wifibroadcast_rx_status_t_sysair 	*status_memory_open_sysair() 
+wifibroadcast_rx_status_t_sysair *status_memory_open_sysair() 
 {
 	int fd;
 	fd = shm_open("/wifibroadcast_rx_status_sysair", O_RDWR, S_IRUSR | S_IWUSR);
@@ -371,13 +453,14 @@ wifibroadcast_rx_status_t_sysair 	*status_memory_open_sysair()
 
 void telemetry_init(telemetry_data_t *td) 
 {
-	// init RSSI shared memory
 	td->rx_status = telemetry_wbc_status_memory_open();
 	td->rx_status_rc = telemetry_wbc_status_memory_open_rc();
 	td->tx_status = telemetry_wbc_status_memory_open_tx();
+	td->sysair_status = status_memory_open_sysair();
 }
 
-void usage(void) {
+void usage() 
+{
 	printf(
 		"rssitx by Rodizio.\n"
 		"Dirty mod by Github @libc0607\n"
@@ -402,30 +485,22 @@ void usage(void) {
     exit(1);
 }
 
-int get_int_from_file (char * filename) 
-{
-	FILE * fp;
-	int ret;
-	
-	fp = fopen (filename, "r");
-	if (NULL == pFile) {
-		perror("ERROR: Could not open %s", filename);
-		exit(EXIT_FAILURE);
-	}
-    fscanf(fp, "%i\n", &ret);
-	fclose(pFile);
-	
-	return ret;
-}
-
 int main (int argc, char *argv[]) 
 {
-	int done = 1, bitrate_kbit, bitrate_measured_kbit, cts;
-
+	uint8_t buf[512];
+	int encryped_framedata_len, full_header_len, rtheader_length, ieeeheader_length;
+	int param_retrans, param_debug, param_mode, i;
+	struct framedata_s framedata;
+	telemetry_data_t td;
+	int sockfd, udpfd;
+	struct sockaddr_in send_addr;
+	
 	setpriority(PRIO_PROCESS, 0, 10);
 	if (argc !=2) {
 		usage();
 	}
+	
+	// Load config file
 	char *file = argv[1];
 	dictionary *ini = iniparser_load(file);
 	if (!ini) {
@@ -433,81 +508,71 @@ int main (int argc, char *argv[])
 		exit(1);
 	}
 	
-	sockfd = open_sock((char *)iniparser_getstring(ini, "PROGRAM_NAME:nic", NULL));
-		
-	param_encrypt_enable = iniparser_getint(ini, "rssitx:encrypt", 0);
-	if (param_encrypt_enable == 1) {
-		param_encrypt_password = (char *)iniparser_getstring(ini, "rssitx:password", NULL);
+	// open socket
+	param_mode = iniparser_getint(ini, "PROGRAM_NAME:mode", 0);
+	param_retrans = iniparser_getint(ini, "PROGRAM_NAME:retrans", 0);
+	param_debug = iniparser_getint(ini, "PROGRAM_NAME:debug", 0); 
+	// wi-fi
+	if (param_mode == 0 || param_mode == 2) {
+		sockfd = open_wifi_sock_by_conf(ini);
 	}
-		
-	bitrate_kbit = get_int_from_file("/tmp/bitrate_kbit");
-	bitrate_measured_kbit = get_int_from_file("/tmp/bitrate_measured_kbit");
-	cts = get_int_from_file("/tmp/cts");
+	// udp
+	if (param_mode == 1 || param_mode == 2) {
+		udpfd = open_udp_sock_by_conf(ini);
+		set_udp_send_addr_by_conf(&send_addr, ini);
+	}
 
-	telemetry_data_t td;
+
+
 	telemetry_init(&td);
-
-	/* framedata.rt1 = 0; // <-- radiotap version
-	framedata.rt2 = 0; // <-- radiotap version
-
-	framedata.rt3 = 12; // <- radiotap header length
-	framedata.rt4 = 0; // <- radiotap header length
-
-	framedata.rt5 = 4; // <-- radiotap present flags
-	framedata.rt6 = 128; // <-- radiotap present flags
-	framedata.rt7 = 0; // <-- radiotap present flags
-	framedata.rt8 = 0; // <-- radiotap present flags
-
-	framedata.rt9 = 24; // <-- radiotap rate
-	framedata.rt10 = 0; // <-- radiotap stuff
-	framedata.rt11 = 0; // <-- radiotap stuff
-	framedata.rt12 = 0; // <-- radiotap stuff
-
-	framedata.fc1 = 180; // <-- frame control field 0x08 = 8 data frame (180 = rts frame)
-	framedata.fc2 = 2; // <-- frame control field 0x02 = 2
-	framedata.dur1 = 0; // <-- duration
-	framedata.dur2 = 0; // <-- duration
-
-	framedata.mac1_1 = 255 ; // port 127
-	framedata.mac1_2 = 0;
-	framedata.mac1_3 = 0;
-	framedata.mac1_4 = 0;
-	framedata.mac1_5 = 0;
-	framedata.mac1_6 = 0;
-
-	framedata.mac2_1 = 0;
-	framedata.mac2_2 = 0;
-	framedata.mac2_3 = 0;
-	framedata.mac2_4 = 0;
-	framedata.mac2_5 = 0;
-	framedata.mac2_6 = 0;
-
-	framedata.mac3_1 = 0;
-	framedata.mac3_2 = 0;
-	framedata.mac3_3 = 0;
-	framedata.mac3_4 = 0;
-	framedata.mac3_5 = 0;
-	framedata.mac3_6 = 0;
-
-	framedata.ieeeseq1 = 0;
-	framedata.ieeeseq2 = 0; */
-
-	bzero(&framedata, sizeof(framedata));
-
-
-	framedata.bitrate_kbit = bitrate_kbit;
-	framedata.bitrate_measured_kbit = bitrate_measured_kbit;
-	framedata.cts = cts;
-
-	wifibroadcast_rx_status_t_sysair *t_sysair = status_memory_open_sysair();
+	bzero(buf, sizeof(buf));
 	
-
-	while (done) {
-		framedata.undervolt = t_sysair->undervolt;
-		framedata.cpuload = t_sysair->cpuload;
-		framedata.temp = t_sysair->temp;
-		sendRSSI(sock, &td);
+	// init radiotap header to buf
+	rtheader_length = packet_rtheader_init_by_conf(0, buf, ini);
+	// init ieee header
+	ieeeheader_length = packet_ieeeheader_init_by_conf(rtheader_length, buf, ini);
+	full_header_len = rtheader_length + ieeeheader_length;
+	
+	// fill framedata (init)
+	bzero(&framedata, sizeof(framedata));
+	framedata.bitrate_kbit = get_int_from_file("/tmp/bitrate_kbit");
+	framedata.bitrate_measured_kbit = get_int_from_file("/tmp/bitrate_measured_kbit");
+	framedata.cts = get_int_from_file("/tmp/cts");
+	
+	while (1) {
+		// 1. fill framedata
+		// note that fill_rssi_packet() contains usleep()
+		fill_rssi_packet(&framedata, &td);
+		// 2. copy data to send buffer
+		memcpy(buf+full_header_len, (uint8_t *)&framedata, sizeof(framedata));
+		// 3. encrypt
+		encryped_framedata_len = encrypt_payload_by_conf_unsafe(buf+full_header_len, sizeof(framedata), ini);
+		// 4. send
+		for (i=0; i<param_retrans; i++) {
+			switch (param_mode) {
+			case 0:
+				// wi-fi only
+				send_packet_wifi(sockfd, buf, full_header_len+encryped_framedata_len);
+				break;
+			case 1:
+				// udp only
+				send_packet_udp(udpfd, buf+full_header_len, encryped_framedata_len, (struct sockaddr *)&send_addr);
+				break;
+			case 2: 
+				// both
+				send_packet_udp(udpfd, buf+full_header_len, encryped_framedata_len, (struct sockaddr *)&send_addr);
+				send_packet_wifi(sockfd, buf, full_header_len+encryped_framedata_len);
+				break;
+			}
+			usleep(1500 * (i+1));
+		}
+		// 5. debug
+		if (param_debug) 
+			dump_memory(buf, full_header_len+encryped_framedata_len, "Full buffer");
 	}
 	iniparser_freedict(ini);
+	close(sockfd);
+	close(udpfd);
 	return 0;
 }
+
