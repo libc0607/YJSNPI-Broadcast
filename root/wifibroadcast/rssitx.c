@@ -54,7 +54,7 @@ rssifreq=3				# 3 new packets per second
 #include <time.h>
 #include <unistd.h>
 
-#define PROGRAM_NAME rssitx
+#define PROGRAM_NAME "rssitx"
 
 static uint8_t u8aRadiotapHeader[] = {
 	0x00, 0x00, // <-- radiotap version
@@ -149,7 +149,7 @@ static int open_sock (char *ifname)
 
 int open_wifi_sock_by_conf(dictionary *ini)
 {
-	return open_sock((char *)iniparser_getstring(ini, "PROGRAM_NAME:nic", NULL));
+	return open_sock((char *)iniparser_getstring(ini, PROGRAM_NAME":nic", NULL));
 }
 
 int open_udp_sock_by_conf(dictionary *ini) 
@@ -159,7 +159,7 @@ int open_udp_sock_by_conf(dictionary *ini)
 	
 	bzero(&source_addr, sizeof(source_addr));
 	source_addr.sin_family = AF_INET;
-	source_addr.sin_port = htons(atoi(iniparser_getstring(ini, "PROGRAM_NAME:udp_bind_port", NULL)));
+	source_addr.sin_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_bind_port", NULL)));
 	source_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	
 	if ((udpfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
@@ -175,8 +175,8 @@ void set_udp_send_addr_by_conf(struct sockaddr_in * addr, dictionary *ini)
 {
 	bzero(&addr, sizeof(addr));
 	addr->sin_family = AF_INET;
-	addr->sin_port = htons(atoi(iniparser_getstring(ini, "PROGRAM_NAME:udp_port", NULL)));
-	addr->sin_addr.s_addr = inet_addr((char *)iniparser_getstring(ini, "PROGRAM_NAME:udp_ip", NULL));
+	addr->sin_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_port", NULL)));
+	addr->sin_addr.s_addr = inet_addr((char *)iniparser_getstring(ini, PROGRAM_NAME":udp_ip", NULL));
 }
 
 int get_int_from_file (char * filename) 
@@ -338,10 +338,10 @@ int send_packet_wifi(int fd, uint8_t *buf, size_t len)
 // return: rtheader_length
 int packet_rtheader_init_by_conf (int offset, uint8_t *buf, dictionary *ini) 
 {
-	int param_bitrate = iniparser_getint(ini, "PROGRAM_NAME:rate", 0);
-	int param_wifimode = iniparser_getint(ini, "PROGRAM_NAME:wifimode", 0);
-	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, "PROGRAM_NAME:ldpc", 0): 0;
-	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, "PROGRAM_NAME:stbc", 0): 0;
+	int param_bitrate = iniparser_getint(ini, PROGRAM_NAME":rate", 0);
+	int param_wifimode = iniparser_getint(ini, PROGRAM_NAME":wifimode", 0);
+	int param_ldpc = (param_wifimode == 1)? iniparser_getint(ini, PROGRAM_NAME":ldpc", 0): 0;
+	int param_stbc = (param_wifimode == 1)? iniparser_getint(ini, PROGRAM_NAME":stbc", 0): 0;
 	uint8_t * p_rtheader = (param_wifimode == 1)? u8aRadiotapHeader80211n: u8aRadiotapHeader;
 	size_t rtheader_length = (param_wifimode == 1)? sizeof(u8aRadiotapHeader80211n): sizeof(u8aRadiotapHeader);
 
@@ -380,8 +380,8 @@ int encrypt_payload_by_conf_unsafe(uint8_t * buf, size_t length, dictionary *ini
 	size_t enc_len;
 	uint8_t * enc_data;
 	
-	encrypt_en = iniparser_getint(ini, "PROGRAM_NAME:encrypt", 0);
-	pwd = (encrypt_en == 1)? (char *)iniparser_getstring(ini, "PROGRAM_NAME:password", NULL): NULL;
+	encrypt_en = iniparser_getint(ini, PROGRAM_NAME":encrypt", 0);
+	pwd = (encrypt_en == 1)? (char *)iniparser_getstring(ini, PROGRAM_NAME":password", NULL): NULL;
 	if (0 == encrypt_en) 
 		return length;
 
@@ -469,24 +469,24 @@ void telemetry_init(telemetry_data_t *td)
 void usage() 
 {
 	printf(
-		"PROGRAM_NAME by Rodizio.\n"
+		PROGRAM_NAME" by Rodizio.\n"
 		"Dirty mod by Github @libc0607\n"
         "\n"
-        "Usage: PROGRAM_NAME <config.file>\n"
+        "Usage: "PROGRAM_NAME" <config.file>\n"
 		"config example:\n"
-		"[PROGRAM_NAME]\n"
+		"["PROGRAM_NAME"]\n"
 		"mode=0					# 0-send packet to air, 1-send to udp, 2-both\n"
 		"nic=wlan0				# optional, when mode set to 0or2\n"
-		"udp_ip=127.0.0.1		# optional, when mode set to 1or2\n"
-		"udp_port=30302			# optional, when mode set to 1or2\n"
-		"udp_bind_port=30300	# optional, when mode set to 1or2\n"
+		"udp_ip=127.0.0.1			# optional, when mode set to 1or2\n"
+		"udp_port=30302				# optional, when mode set to 1or2\n"
+		"udp_bind_port=30300			# optional, when mode set to 1or2\n"
 		"wifimode=0				# 0-b/g 1-n\n"
 		"rate=6					# Mbit(802.11b/g) / mcs index 0~7(802.11n/ac)\n"
 		"ldpc=0					# 802.11n/ac only\n"
 		"stbc=0					# 0-off, 1/2/3-stbc streams\n"
 		"encrypt=0				# 0-off, 1-on\n"
-		"password=1145141919810	# char\n"
-		"debug=0				# 0-off 1-packet hexdump\n"
+		"password=1145141919810			# char\n"
+		"debug=0					# 0-off 1-packet hexdump\n"
 		"rssifreq=3				# send 3 new packets per second\n"
 	);
     exit(1);
@@ -516,10 +516,10 @@ int main (int argc, char *argv[])
 		exit(1);
 	}
 	
-	param_mode = iniparser_getint(ini, "PROGRAM_NAME:mode", 0);
-	param_retrans = iniparser_getint(ini, "PROGRAM_NAME:retrans", 0);
-	param_debug = iniparser_getint(ini, "PROGRAM_NAME:debug", 0); 
-	param_rssifreq = iniparser_getint(ini, "PROGRAM_NAME:rssifreq", 0); 
+	param_mode = iniparser_getint(ini, PROGRAM_NAME":mode", 0);
+	param_retrans = iniparser_getint(ini, PROGRAM_NAME":retrans", 0);
+	param_debug = iniparser_getint(ini, PROGRAM_NAME":debug", 0); 
+	param_rssifreq = iniparser_getint(ini, PROGRAM_NAME":rssifreq", 0); 
 	
 	// open socket
 	// wi-fi
