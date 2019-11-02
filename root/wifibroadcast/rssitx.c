@@ -4,24 +4,23 @@
 // Mod by @libc0607
 
 // Usage: ./rssitx config.ini
-/*
 
+/*
 [rssitx]
-mode=0	# 0-send packet to air, 1-send to udp, 2-both
-nic=wlan0				// optional, when mode set to 0or2
-udp_ip=127.0.0.1		// optional, when mode set to 1or2
-udp_port=30302			// optional, when mode set to 1or2
-udp_bind_port=30300		// optional, when mode set to 1or2
-wifimode=0				// 0-b/g 1-n
-rate=6					// Mbit(802.11b/g) / mcs index(802.11n/ac)
-ldpc=0					// 802.11n/ac only
-stbc=0
-encrypt=0
-password=1145141919810
-debug=0		# 0-off 1-fprintf 2-hexdump
-rssifreq=3	# 3 new packets per second
+mode=0					# 0-send packet to air, 1-send to udp, 2-both
+nic=wlan0				# optional, when mode set to 0or2
+udp_ip=127.0.0.1		# optional, when mode set to 1or2
+udp_port=30302			# optional, when mode set to 1or2
+udp_bind_port=30300		# optional, when mode set to 1or2
+wifimode=0				# 0-b/g 1-n
+rate=6					# Mbit(802.11b/g) / mcs index 0~7(802.11n/ac)
+ldpc=0					# 802.11n/ac only
+stbc=0					# 0-off, 1/2/3-stbc streams
+encrypt=0				# 0-off, 1-on
+password=1145141919810	# char
+debug=0					# 0-off 1-packet hexdump
+rssifreq=3				# 3 new packets per second
 */
-//
 
 
 #include "lib.h"
@@ -56,7 +55,6 @@ rssifreq=3	# 3 new packets per second
 #include <unistd.h>
 
 #define PROGRAM_NAME rssitx
-#define CPU_USAGE_FREQ 3	// 3Hz
 
 static uint8_t u8aRadiotapHeader[] = {
 	0x00, 0x00, // <-- radiotap version
@@ -471,25 +469,25 @@ void telemetry_init(telemetry_data_t *td)
 void usage() 
 {
 	printf(
-		"rssitx by Rodizio.\n"
+		"PROGRAM_NAME by Rodizio.\n"
 		"Dirty mod by Github @libc0607\n"
         "\n"
-        "Usage: rssitx <config.file>\n"
+        "Usage: PROGRAM_NAME <config.file>\n"
 		"config example:\n"
-		"[rssitx]\n"
-		"nic=wlan0\n"
-		"encrypt=1\n"
-		"password=1919810\n\n"
-		"mode=0	# 0-send packet to air, 1-send to udp, 2-both"
-		"udp_ip=127.0.0.1		// optional, when mode set to 1or2"
-		"udp_port=30302			// optional, when mode set to 1or2"
-		"udp_bind_port=30300		// optional, when mode set to 1or2"
-		"wifimode=0				// 0-b/g 1-n"
-		"rate=6					// Mbit(802.11b/g) / mcs index(802.11n/ac)"
-		"ldpc=0					// 802.11n/ac only"
-		"stbc=0"
-		"debug=0"
-		
+		"[PROGRAM_NAME]\n"
+		"mode=0					# 0-send packet to air, 1-send to udp, 2-both\n"
+		"nic=wlan0				# optional, when mode set to 0or2\n"
+		"udp_ip=127.0.0.1		# optional, when mode set to 1or2\n"
+		"udp_port=30302			# optional, when mode set to 1or2\n"
+		"udp_bind_port=30300	# optional, when mode set to 1or2\n"
+		"wifimode=0				# 0-b/g 1-n\n"
+		"rate=6					# Mbit(802.11b/g) / mcs index 0~7(802.11n/ac)\n"
+		"ldpc=0					# 802.11n/ac only\n"
+		"stbc=0					# 0-off, 1/2/3-stbc streams\n"
+		"encrypt=0				# 0-off, 1-on\n"
+		"password=1145141919810	# char\n"
+		"debug=0				# 0-off 1-packet hexdump\n"
+		"rssifreq=3				# send 3 new packets per second\n"
 	);
     exit(1);
 }
