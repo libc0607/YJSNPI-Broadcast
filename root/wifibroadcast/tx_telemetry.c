@@ -535,25 +535,25 @@ int main(int argc, char *argv[])
 	if (argc !=2) {
 		usage();
 	}
-	param_cts = iniparser_getint(ini, "tx_telemetry:cts_protection", 0);
-	param_port = iniparser_getint(ini, "tx_telemetry:port", 0);
-	param_retransmissions = iniparser_getint(ini, "tx_telemetry:retrans_count", 0);
-	param_telemetry_protocol = iniparser_getint(ini, "tx_telemetry:tele_protocol", 0);
-	param_data_rate = iniparser_getint(ini, "tx_telemetry:rate", 0);
-	param_transmission_mode = iniparser_getint(ini, "tx_telemetry:transmode", 0);
-	param_wifimode = (0 == iniparser_getint(ini, "tx:wifimode", 0))? 0: 1;
-	param_ldpc = iniparser_getint(ini, "tx_telemetry:ldpc", 0);
-	param_stbc = iniparser_getint(ini, "tx_telemetry:stbc", 0);
-	param_mode = iniparser_getint(ini, "tx_telemetry:mode", 0);
+	param_cts = iniparser_getint(ini, PROGRAM_NAME":cts_protection", 0);
+	param_port = iniparser_getint(ini, PROGRAM_NAME":port", 0);
+	param_retransmissions = iniparser_getint(ini, PROGRAM_NAME":retrans_count", 0);
+	param_telemetry_protocol = iniparser_getint(ini, PROGRAM_NAME":tele_protocol", 0);
+	param_data_rate = iniparser_getint(ini, PROGRAM_NAME":rate", 0);
+	param_transmission_mode = iniparser_getint(ini, PROGRAM_NAME":transmode", 0);
+	param_wifimode = (0 == iniparser_getint(ini, PROGRAM_NAME":wifimode", 0))? 0: 1;
+	param_ldpc = iniparser_getint(ini, PROGRAM_NAME":ldpc", 0);
+	param_stbc = iniparser_getint(ini, PROGRAM_NAME":stbc", 0);
+	param_mode = iniparser_getint(ini, PROGRAM_NAME":mode", 0);
 	
-	param_encrypt_enable = iniparser_getint(ini, "tx_telemetry:encrypt", 0);
+	param_encrypt_enable = iniparser_getint(ini, PROGRAM_NAME":encrypt", 0);
 	if (param_encrypt_enable == 1) {
-		param_encrypt_password = (char *)iniparser_getstring(ini, "tx_telemetry:password", NULL);
+		param_encrypt_password = (char *)iniparser_getstring(ini, PROGRAM_NAME":password", NULL);
 	}
 
 	if (param_mode == 1) {
 		// udp enabled
-		param_udp_send_ip = (char *)iniparser_getstring(ini, "tx_telemetry:udp_send_ip", NULL);
+		param_udp_send_ip = (char *)iniparser_getstring(ini, PROGRAM_NAME":udp_send_ip", NULL);
 		param_udp_send_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_send_port", NULL)));
 		param_udp_bind_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_bind_port", NULL)));
 		bzero(&addr, sizeof(addr));
@@ -576,7 +576,7 @@ int main(int argc, char *argv[])
 			argv[0], param_cts, param_port, param_retransmissions, param_telemetry_protocol,
 			param_data_rate, param_transmission_mode, param_wifimode, param_mode, param_ldpc, param_stbc, 
 			(int)param_udp_bind_port, param_udp_send_ip, (int)param_udp_send_port, param_encrypt_enable,
-			iniparser_getstring(ini, "tx_telemetry:nic", NULL)
+			iniparser_getstring(ini, PROGRAM_NAME":nic", NULL)
 	);
     int x = optind;
     int num_interfaces = 0;
@@ -585,7 +585,7 @@ int main(int argc, char *argv[])
 	// ini supports only support one interface now
 	// should be fixed later
 	snprintf(path, 45, "/sys/class/net/%s/device/uevent", 
-					iniparser_getstring(ini, "tx_telemetry:nic", NULL));
+					iniparser_getstring(ini, PROGRAM_NAME":nic", NULL));
 	procfile = fopen(path, "r");
 	if (!procfile) {
 		fprintf(stderr,"ERROR: opening %s failed!\n", path); 
@@ -596,14 +596,14 @@ int main(int argc, char *argv[])
 	fgets(line, 100, procfile); 
 	if (strncmp(line, "DRIVER=ath9k", 12) == 0) { 
 		// it's an atheros card
-		fprintf(stderr, "tx_telemetry: Atheros card detected\n");
+		fprintf(stderr, PROGRAM_NAME": Atheros card detected\n");
 		type[num_interfaces] = 0;
 	} else { 
 		// ralink
-		fprintf(stderr, "tx_telemetry: Ralink (or other) card detected\n");
+		fprintf(stderr, PROGRAM_NAME": Ralink (or other) card detected\n");
 		type[num_interfaces] = 1;
 	}
-	socks[num_interfaces] = open_sock((char *)iniparser_getstring(ini, "tx_telemetry:nic", NULL));
+	socks[num_interfaces] = open_sock((char *)iniparser_getstring(ini, PROGRAM_NAME":nic", NULL));
 	++num_interfaces;
 	++x;
 	fclose(procfile);
@@ -627,7 +627,7 @@ int main(int argc, char *argv[])
 			case 24: u8aRadiotapHeader[8]=0x30; break;
 			case 36: u8aRadiotapHeader[8]=0x48; break;
 			case 48: u8aRadiotapHeader[8]=0x60; break;
-			default: fprintf(stderr, "tx_telemetry: ERROR: Wrong or no data rate specified\n"); 
+			default: fprintf(stderr, PROGRAM_NAME": ERROR: Wrong or no data rate specified\n"); 
 				exit(1); break;
 		}
 	} else if (param_wifimode == 1) {
@@ -711,13 +711,13 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "read delta:%lldms bytes:%d ",took_read,inl);
 		}
 		if (inl < 0) { 
-			fprintf(stderr,"tx_telemetry: ERROR: reading stdin"); 
+			fprintf(stderr,PROGRAM_NAME": ERROR: reading stdin"); 
 			return 1; 
 		} else if (inl > 350) { 
-			fprintf(stderr,"tx_telemetry: Warning: Input data > 350 bytes"); 
+			fprintf(stderr,PROGRAM_NAME": Warning: Input data > 350 bytes"); 
 			continue; 
 		} else if (inl == 0) { 
-			fprintf(stderr, "tx_telemetry: Warning: Lost connection to stdin\n"); 
+			fprintf(stderr, PROGRAM_NAME": Warning: Lost connection to stdin\n"); 
 			usleep(1e5); 
 			continue;
 		} // EOF
