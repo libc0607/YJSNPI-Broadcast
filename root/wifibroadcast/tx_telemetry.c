@@ -33,12 +33,16 @@
 #include <termios.h>
 #include <time.h>
 #include <unistd.h>
-//#include <arpa/inet.h>
+#include <arpa/inet.h>
+
+#define PROGRAM_NAME "tx_telemetry"
 
 int sock = 0;
 int socks[5];
 int type[5];
-
+int udpfd;
+struct sockaddr_in addr, bind_addr;
+	
 //struct timeval time;
 
 mavlink_status_t status;
@@ -170,10 +174,14 @@ void usage(void)
 	"ldpc=0		        	# 1-Use LDPC encode, 0-default. Experimental. Only valid when wifimode=n and both your Wi-Fi cards support LDPC."
 	"stbc=0					# 0-default, 1-1 STBC stream, 2-2 STBC streams, 3-3 STBC streams. Only valid when wifimode=n and both your Wi-Fi cards support STBC.\n"
 	"rate=6             	# Data rate to send frames with. Currently only supported with Ralink cards. Choose 6,12,18,24,36 Mbit\n"
-	"mode=0             	# Transmission mode, not used. 0 = send on all interfaces, 1 = send only on interface with best RSSI\n"
+	"transmode=0            # Transmission mode, not used. 0 = send on all interfaces, 1 = send only on interface with best RSSI\n"
 	"nic=wlan0          	# Wi-Fi interface\n"
 	"encrypt=1				# enable encrypt. Note that when encrypt is enabled, the actual payload length will be reduced by 4\n"
 	"password=yarimasune1919810\n"
+	"mode=0					# 0-wifi, 1-wifi+udp\n"
+	"udp_send_ip=10.1.1.2	# send to udp \n"
+	"udp_send_port=22323	# send to udp \n"
+	"udp_bind_port=1111 	# send to udp source port\n"
 	""
 	);
     exit(1);
@@ -201,14 +209,14 @@ void telemetry_init(telemetry_data_t *td)
 
 void sendpacket(uint32_t seqno, uint16_t len, telemetry_data_t *td, 
 				int transmission_mode, int num_int, uint8_t data[512],// ???
-				int encrypt_enable, char * encrypt_password) 	
+				int encrypt_enable, char * encrypt_password, int udp_en) 	
 {
 	header.seqnumber = seqno;
 	header.length = len;
 //	fprintf(stderr,"seqno: %d",seqno);
 	int padlen = 0;
 	int best_adapter = 0;
-	
+	int slen = sizeof(addr);
 	// encrypt data
 	uint8_t * p_send_data;
 	size_t send_data_length;
@@ -245,7 +253,13 @@ void sendpacket(uint32_t seqno, uint16_t len, telemetry_data_t *td,
 	        if (write(socks[best_adapter], &packet_buffer_ath, 
 						headers_atheros_len + sizeof(header) + send_data_length + padlen) < 0 ) {
 				fprintf(stderr, ".");
-			}	
+			}
+			if (udp_en) {
+				if ( sendto(udpfd, packet_buffer_ath, headers_atheros_len+sizeof(header)+send_data_length+padlen, 
+							0, (struct sockaddr *)&addr, slen) < 0) {
+					fprintf(stderr, ",");
+				}	
+			}
 	    } else { // Ralink
 			// telemetry header (seqno and len)
 			memcpy(packet_buffer_ral + headers_ralink_len, &header, sizeof(header));
@@ -260,7 +274,13 @@ void sendpacket(uint32_t seqno, uint16_t len, telemetry_data_t *td,
 			if (write(socks[best_adapter], &packet_buffer_ral, 
 						headers_ralink_len + sizeof(header) + send_data_length + padlen) < 0 ) {
 				fprintf(stderr, ".");
-			}	
+			}
+			if (udp_en) {
+				if ( sendto(udpfd, packet_buffer_ral, headers_ralink_len + sizeof(header) + send_data_length + padlen,
+							0, (struct sockaddr *)&addr, slen) < 0) {
+					fprintf(stderr, ",");
+				}	
+			}			
 		}
 	} else { 
 		// transmit on all interfaces
@@ -293,6 +313,12 @@ void sendpacket(uint32_t seqno, uint16_t len, telemetry_data_t *td,
 //			    fprintf(stderr," writelen:%d ",headers_atheros_len + 4 + send_data_length);
 				if (write(socks[i], &packet_buffer_ath, headers_atheros_len + 6 + send_data_length + padlen) < 0 ) 
 					fprintf(stderr, ".");
+				if (udp_en) {
+					if ( sendto(udpfd, packet_buffer_ath, headers_atheros_len + 6 + send_data_length + padlen,
+								0, (struct sockaddr *)&addr, slen) < 0) {
+						fprintf(stderr, ",");
+					}	
+				}
 			} else { 
 				// Ralink
 //			    fprintf(stderr,"type: Ralink");
@@ -309,6 +335,12 @@ void sendpacket(uint32_t seqno, uint16_t len, telemetry_data_t *td,
 				if (write(socks[i], &packet_buffer_ral, 
 							headers_ralink_len + 6 + send_data_length + padlen) < 0 ) {
 					fprintf(stderr, ".");
+				}
+				if (udp_en) {
+					if ( sendto(udpfd, packet_buffer_ral, headers_ralink_len + 6 + send_data_length + padlen,
+								0, (struct sockaddr *)&addr, slen) < 0) {
+						fprintf(stderr, ",");
+					}	
 				}
 					
 			}
@@ -478,7 +510,13 @@ int main(int argc, char *argv[])
 	int param_stbc = 0;
 	int param_encrypt_enable = 0;
 	char * param_encrypt_password = NULL;
+	
+	int param_mode = 0;
+	char * param_udp_send_ip = NULL;
+	uint16_t param_udp_send_port = 0;
+	uint16_t param_udp_bind_port = 0;
 
+	
     uint8_t buf[512]; // data read from stdin
     uint8_t mavlink_message[512];
 
@@ -502,19 +540,42 @@ int main(int argc, char *argv[])
 	param_retransmissions = iniparser_getint(ini, "tx_telemetry:retrans_count", 0);
 	param_telemetry_protocol = iniparser_getint(ini, "tx_telemetry:tele_protocol", 0);
 	param_data_rate = iniparser_getint(ini, "tx_telemetry:rate", 0);
-	param_transmission_mode = iniparser_getint(ini, "tx_telemetry:mode", 0);
+	param_transmission_mode = iniparser_getint(ini, "tx_telemetry:transmode", 0);
 	param_wifimode = (0 == iniparser_getint(ini, "tx:wifimode", 0))? 0: 1;
 	param_ldpc = iniparser_getint(ini, "tx_telemetry:ldpc", 0);
 	param_stbc = iniparser_getint(ini, "tx_telemetry:stbc", 0);
+	param_mode = iniparser_getint(ini, "tx_telemetry:mode", 0);
 	
 	param_encrypt_enable = iniparser_getint(ini, "tx_telemetry:encrypt", 0);
 	if (param_encrypt_enable == 1) {
 		param_encrypt_password = (char *)iniparser_getstring(ini, "tx_telemetry:password", NULL);
 	}
-	fprintf(stderr, "%s Config: cts %d, port %d, retrans %d, proto %d, rate %d, mode %d, wifimode %d, ldpc %d, encrypt %d, nic %s\n",
+
+	if (param_mode == 1) {
+		// udp enabled
+		param_udp_send_ip = (char *)iniparser_getstring(ini, "tx_telemetry:udp_send_ip", NULL);
+		param_udp_send_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_send_port", NULL)));
+		param_udp_bind_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_bind_port", NULL)));
+		bzero(&addr, sizeof(addr));
+		bzero(&bind_addr, sizeof(bind_addr));
+		bind_addr.sin_family = AF_INET;
+		bind_addr.sin_port = param_udp_bind_port;
+		bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		if ((udpfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
+			printf("ERROR: Could not create UDP socket!");
+		if (-1 == bind(udpfd, (struct sockaddr*)&bind_addr, sizeof(bind_addr))) {
+			fprintf(stderr, "Bind UDP port failed.\n");
+			exit(0);
+		}
+		addr.sin_family = AF_INET;
+		addr.sin_port = param_udp_send_port;
+		addr.sin_addr.s_addr = inet_addr(param_udp_send_ip);
+	}
+	
+	fprintf(stderr, "%s Config: cts %d, port %d, retrans %d, proto %d, rate %d, transmode %d, wifimode %d, mode %d, ldpc %d, stbc %d, udp_bind %d, udp_send %s:%d, encrypt %d, nic %s\n",
 			argv[0], param_cts, param_port, param_retransmissions, param_telemetry_protocol,
-			param_data_rate, param_transmission_mode, param_wifimode, param_ldpc,
-			param_encrypt_enable,
+			param_data_rate, param_transmission_mode, param_wifimode, param_mode, param_ldpc, param_stbc, 
+			(int)param_udp_bind_port, param_udp_send_ip, (int)param_udp_send_port, param_encrypt_enable,
 			iniparser_getstring(ini, "tx_telemetry:nic", NULL)
 	);
     int x = optind;
@@ -653,7 +714,7 @@ int main(int argc, char *argv[])
 			fprintf(stderr,"tx_telemetry: ERROR: reading stdin"); 
 			return 1; 
 		} else if (inl > 350) { 
-			fprintf(stderr,"tx_telemetry: Warning: Input data > 300 bytes"); 
+			fprintf(stderr,"tx_telemetry: Warning: Input data > 350 bytes"); 
 			continue; 
 		} else if (inl == 0) { 
 			fprintf(stderr, "tx_telemetry: Warning: Lost connection to stdin\n"); 
@@ -679,7 +740,7 @@ int main(int argc, char *argv[])
 				for (int k=0; k<param_retransmissions; k++) {
 					sendpacket(seqno, len_msg, &td, param_transmission_mode, 
 											num_interfaces, mavlink_message,
-											param_encrypt_enable, param_encrypt_password);
+											param_encrypt_enable, param_encrypt_password, param_mode);
 					usleep(300*(k+1)*1.4);
 				}
 				pcnt++;
@@ -689,7 +750,7 @@ int main(int argc, char *argv[])
 			// generic telemetry handling
 			for (int k=0; k<param_retransmissions; k++) {
 				sendpacket(seqno, inl, &td, param_transmission_mode, num_interfaces, buf,
-										param_encrypt_enable, param_encrypt_password);
+										param_encrypt_enable, param_encrypt_password, param_mode);
 				usleep(300*(k+1)*1.4);
 			}
 			pcnt++;
