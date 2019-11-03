@@ -30,8 +30,11 @@
 #define MAX_USER_PACKET_LENGTH 2278
 #define MAX_DATA_OR_FEC_PACKETS_PER_BLOCK 32
 
+#define PROGRAM_NAME "rx"
 #define DEBUG 0
 #define debug_print(fmt, ...) do { if (DEBUG) fprintf(stderr, fmt, __VA_ARGS__); } while (0)
+
+#define PCAP_FILTER_CHAR "(ether[0x00:2] == 0x0801 || ether[0x00:2] == 0x0802 || ether[0x00:4] == 0xb4010000) && ether[0x04:1] == 0x%.2x"
 
 // this is where we store a summary of the information from the radiotap header
 typedef struct  {
@@ -50,6 +53,10 @@ int param_data_packets_per_block = 8;
 int param_fec_packets_per_block = 4;
 int param_block_buffers = 1;
 int param_packet_length = 1024;
+int param_mode = 0;
+uint16_t param_udp_in_bind_port = 0;
+struct sockaddr_in udp_in_bind_addr;	
+int udpin_fd;
 
 wifibroadcast_rx_status_t *rx_status = NULL;
 int max_block_num = -1;
@@ -110,6 +117,8 @@ void usage(void) {
 		"\tnic=wlan0          # Wi-Fi interface\n"
 		"\tencrypt=1          # enable encrypt. Note that when encrypt is enabled, the actual payload length will be reduced by 4\n"
 		"\tpassword=yarimasune1919810\n"
+		"\tmode=0			  # 0-wifi 1-wifi+udp "
+		"\tudp_in_bind_port=2323 # udp listen port (input)"
 		, 1024, MAX_USER_PACKET_LENGTH
 	);
 	exit(1);
@@ -156,7 +165,7 @@ void open_and_configure_interface(const char *name, int port, monitor_interface_
 	if (nLinkEncap == DLT_IEEE802_11_RADIO) {
 //			interface->n80211HeaderLength = 0x18; // Use the first 5 bytes as header, first two bytes frametype, next two bytes duration, then port
 			// match on data short, data, rts (and port)
-			sprintf(szProgram, "(ether[0x00:2] == 0x0801 || ether[0x00:2] == 0x0802 || ether[0x00:4] == 0xb4010000) && ether[0x04:1] == 0x%.2x", port_encoded);
+			sprintf(szProgram, PCAP_FILTER_CHAR, port_encoded);
 	} else {
 		fprintf(stderr, "ERROR: unknown encapsulation on %s! check if monitor mode is supported and enabled\n", name);
 		exit(1);
@@ -574,7 +583,6 @@ void process_packet(monitor_interface_t *interface, block_buffer_t *block_buffer
 	process_payload(pu8Payload, bytes, checksum_correct, block_buffer_list, adapter_no);
 }
 
-
 void status_memory_init(wifibroadcast_rx_status_t *s) 
 {
 	s->received_block_cnt = 0;
@@ -646,22 +654,23 @@ int main(int argc, char *argv[])
 		fprintf(stderr,"iniparser: failed to load %s.\n", file);
 		exit(1);
 	}
-	param_fec_packets_per_block = iniparser_getint(ini, "rx:fecnum", 0);
-	param_data_packets_per_block = iniparser_getint(ini, "rx:datanum", 0); 
-	param_packet_length = iniparser_getint(ini, "rx:packetsize", 0);
-	param_port = iniparser_getint(ini, "rx:port", 0);
-	param_block_buffers = iniparser_getint(ini, "rx:bufsize", 0);
-	param_recording_en = iniparser_getint(ini, "rx:recording", 0);
-	param_recording_path = (char *)iniparser_getstring(ini, "rx:recording_dir", NULL);
+	param_fec_packets_per_block = iniparser_getint(ini, PROGRAM_NAME":fecnum", 0);
+	param_data_packets_per_block = iniparser_getint(ini, PROGRAM_NAME":datanum", 0); 
+	param_packet_length = iniparser_getint(ini, PROGRAM_NAME":packetsize", 0);
+	param_port = iniparser_getint(ini, PROGRAM_NAME":port", 0);
+	param_block_buffers = iniparser_getint(ini, PROGRAM_NAME":bufsize", 0);
+	param_recording_en = iniparser_getint(ini, PROGRAM_NAME":recording", 0);
+	param_recording_path = (char *)iniparser_getstring(ini, PROGRAM_NAME":recording_dir", NULL);
+	param_mode = iniparser_getint(ini, PROGRAM_NAME":mode", 0);
 	/*
-	 * Note: "rx:packetsize" is the length that actually in air
+	 * Note: PROGRAM_NAME":packetsize" is the length that actually in air
 	 * packetsize mod 4 should be 0 (for xxtea-encrypt compatible)
 	 * if encrypt is enabled, the valid data length in each packet decreased by 4 
 	*/
-	param_packet_length = iniparser_getint(ini, "rx:packetsize", 0);		
-	param_encrypt_enable = iniparser_getint(ini, "rx:encrypt", 0);
+	param_packet_length = iniparser_getint(ini, PROGRAM_NAME":packetsize", 0);		
+	param_encrypt_enable = iniparser_getint(ini, PROGRAM_NAME":encrypt", 0);
 	if (param_encrypt_enable == 1) {
-		param_encrypt_password = (char *)iniparser_getstring(ini, "rx:password", NULL);
+		param_encrypt_password = (char *)iniparser_getstring(ini, PROGRAM_NAME":password", NULL);
 		//param_packet_length -= 4;	// xxtea-c library has a 4 bytes header
 	}
 	if ((param_packet_length % 4) != 0) {
@@ -673,12 +682,25 @@ int main(int argc, char *argv[])
 								MAX_USER_PACKET_LENGTH, param_packet_length);
 		return (1);
 	}
+	if (param_mode == 1) {
+		bzero(&udp_in_bind_addr, sizeof(struct sockaddr_in));
+		udp_in_bind_addr.sin_family = AF_INET;
+		udp_in_bind_addr.sin_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_in_bind_port", NULL)));
+		udp_in_bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+		if ((udpin_fd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
+			printf("ERROR: Could not create UDP in socket!");
+		if (-1 == bind(udpin_fd, (struct sockaddr*)&udp_in_bind_addr, sizeof(udp_in_bind_addr))) {
+			fprintf(stderr, "Bind UDP in port failed.\n");
+			exit(0);
+		}
+	}
+	
 	char save_filename[128];	// should enough..?
 	bzero(&save_filename, sizeof(save_filename));
 	if (param_recording_en) {		
 		// use timestamp in filename
 		sprintf(save_filename, "%s/video-%lld.h264", 
-				iniparser_getstring(ini, "rx:recording_dir", NULL), current_timestamp());
+				iniparser_getstring(ini, PROGRAM_NAME":recording_dir", NULL), current_timestamp());
 		save_fd = fopen(save_filename, "wb");
 	}
 	fprintf(stderr, "%s Config: packet %d/%d/%d, port %d, buf %d, recording %d, recordpath %s\n",
@@ -697,14 +719,14 @@ int main(int argc, char *argv[])
 
 	bzero(&udp_send_addr, slen);
 	udp_send_addr.sin_family = AF_INET;
-	udp_send_addr.sin_port = htons(iniparser_getint(ini, "rx:udp_port", 0));
-	udp_send_addr.sin_addr.s_addr = inet_addr(iniparser_getstring(ini, "rx:udp_ip", NULL));
+	udp_send_addr.sin_port = htons(iniparser_getint(ini, PROGRAM_NAME":udp_port", 0));
+	udp_send_addr.sin_addr.s_addr = inet_addr(iniparser_getstring(ini, PROGRAM_NAME":udp_ip", NULL));
 	if ((udp_sockfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
 		printf("ERROR: Could not create UDP socket!");
 	
 	bzero(&udp_bind_addr, slen);	
 	udp_bind_addr.sin_family = AF_INET;
-	udp_bind_addr.sin_port = htons(atoi(iniparser_getstring(ini, "rx:udp_bind_port", NULL)));
+	udp_bind_addr.sin_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_bind_port", NULL)));
 	udp_bind_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	// always bind on the same source port to avoid UDP "connection" fail
 	if (-1 == bind(udp_sockfd, (struct sockaddr*)&udp_bind_addr, sizeof(udp_bind_addr))) {
@@ -715,9 +737,9 @@ int main(int argc, char *argv[])
 	}
 	
 	// ini supports only support one interface now
-	open_and_configure_interface(iniparser_getstring(ini, "rx:nic", NULL), 
+	open_and_configure_interface(iniparser_getstring(ini, PROGRAM_NAME":nic", NULL), 
 									param_port, interfaces);
-	snprintf(path, 45, "/sys/class/net/%s/device/uevent", iniparser_getstring(ini, "rx:nic", NULL));
+	snprintf(path, 45, "/sys/class/net/%s/device/uevent", iniparser_getstring(ini, PROGRAM_NAME":nic", NULL));
 	procfile = fopen(path, "r");
 	if (!procfile) {
 		fprintf(stderr,"ERROR: opening %s failed!\n", path); 
@@ -767,7 +789,9 @@ int main(int argc, char *argv[])
 		FD_ZERO(&readset);
 		fd_sum = 0;
 		FD_SET(interfaces[0].selectable_fd, &readset);
-		fd_sum += interfaces[0].selectable_fd;
+		if (param_mode)
+			FD_SET(udpin_fd, &readset);
+		fd_sum = interfaces[0].selectable_fd + udpin_fd;
 		int n = select(fd_sum+1, &readset, NULL, NULL, &to);
 		//int n = select(30, &readset, NULL, NULL, &to);	// what is 30???
 		if (n == 0) 
@@ -775,7 +799,9 @@ int main(int argc, char *argv[])
 		if(FD_ISSET(interfaces[0].selectable_fd, &readset)) {
 			process_packet(interfaces, block_buffer_list, 0);
 		}
-
+		if(FD_ISSET(udpin_fd, &readset)) {
+			// to-do
+		}
 	}
 	iniparser_freedict(ini);
 	fclose(save_fd);
