@@ -318,6 +318,8 @@ int32_t process_packet(monitor_interface_t *interface, int serialport)
 	
 	// Process packet
 	
+	// to-do: decrypt
+	
 	p_framedata = (struct framedata_s*)pu8Payload;
 	crc32_val = p_framedata->crc;
 
@@ -332,6 +334,64 @@ int32_t process_packet(monitor_interface_t *interface, int serialport)
 	if (crc32_calculated != crc32_val) {
 		if (param_debug) {
 			fprintf(stderr, "process_packet(): got a packet with crc32 error.\n");
+		}
+		return 0;
+	}
+	
+	// "framedata.seqno"
+	// "message"	|AAAAA	|BBBBB	|CCCCC	|...	
+	// seqno		|0		|1		|2		|...
+	// subseqno		|0	|1	|0	|1	|0	|1	|...	
+	seqno = ntohl(p_framedata->seqnum);
+	subseqno = p_framedata->subseqnum;
+	// check if we've got the new message:
+	if (seqno == last_seq) {
+		// 1. we received that message the second (or maybe more) time
+		// ... what should we do?
+	} else if (last_seq + 1 == seqno) {
+		// 2. we received that message the first time
+		rx_status_rc->adapter[0].signal_good = 1;
+	} else {
+		// 3. we lost some messages 
+		// e.g. when last_seq=10, seqno=14 => 11~13 were lost => (14-10+1) packets lost
+		rx_status_rc->lost_packet_cnt += (seqno - last_seq + 1);
+		rx_status_rc->adapter[0].signal_good = 0;
+	}
+	last_seq = seqno;
+	last_subseq = subseqno;
+
+	memcpy(sbus_output_buf, p_framedata->body, sizeof(sbus_output_buf)); 
+	
+	// Write data to uart	
+	write(serialport, sbus_output_buf, sizeof(sbus_output_buf));
+
+	return 0;
+}
+
+int32_t process_packet_udp(uint8_t * buf, int len, int serialport) 
+{
+
+    int bytes, n, retval, u16HeaderLen;
+    uint8_t *pu8Payload = buf;
+    uint8_t frame_length;
+	struct framedata_s * p_framedata;
+	uint32_t crc32_calculated, seqno, subseqno, crc32_val;
+	
+	
+	p_framedata = (struct framedata_s*)pu8Payload;
+	crc32_val = p_framedata->crc;
+
+	// "framedata.length"
+	frame_length = (uint32_t)(p_framedata->headerlen) + (uint32_t)(p_framedata->bodylen);
+
+	crc32_calculated = htonl( xcrc32( pu8Payload, (int)frame_length, 0xffffffff) );
+	if (param_debug) {
+		fprintf(stderr, "Got UDP packet: length=%d, crc=0x%x(calculated 0x%x)", frame_length, crc32_val, crc32_calculated);
+	}
+	
+	if (crc32_calculated != crc32_val) {
+		if (param_debug) {
+			fprintf(stderr, "process_packet_udp(): got a packet with crc32 error.\n");
 		}
 		return 0;
 	}
@@ -430,10 +490,35 @@ int check_nic_type (char *nic_name)
 	fclose(procfile);
 	return type;
 }
+
+// input: ini
+// output: addr
+int open_udp_binded_sock_by_conf(dictionary *ini, struct sockaddr_in * addr) 
+{
+	int udpfd;
 	
+	bzero(addr, sizeof(struct sockaddr_in));
+	addr->sin_family = AF_INET;
+	addr->sin_port = htons(atoi(iniparser_getstring(ini, PROGRAM_NAME":udp_bind_port", NULL)));
+	addr->sin_addr.s_addr = htonl(INADDR_ANY);
+	
+	if ((udpfd = socket(PF_INET, SOCK_DGRAM, 0)) == -1) 
+		printf("ERROR: Could not create UDP socket!");
+	if (-1 == bind(udpfd, (struct sockaddr*)addr, sizeof(addr))) {
+		fprintf(stderr, "Bind UDP port failed.\n");
+		exit(0);
+	}
+	
+	return udpfd;
+}
+
 int main(int argc, char *argv[]) 
 {
 	monitor_interface_t iface;
+	struct sockaddr_in addr;
+	int udpfd;
+	int slen = sizeof(addr);
+	uint8_t buf[256];
 	
 	// Get ini from file
 	char *file = argv[1];
@@ -446,23 +531,29 @@ int main(int argc, char *argv[])
 		usage();
 	}
 
-	// init & check nic
-	char * nic_name = (char *)iniparser_getstring(ini, "PROGRAM_NAME:nic", NULL);
-	int nic_type = 0;
-	if (-1 == (nic_type = check_nic_type(nic_name))) {
-		exit(1);
+	param_mode = iniparser_getint(ini, PROGRAM_NAME":mode", 0);
+	if (param_mode == 0 || param_mode == 2) {
+		// init & check nic
+		char * nic_name = (char *)iniparser_getstring(ini, PROGRAM_NAME":nic", NULL);
+		int nic_type = 0;
+		if (-1 == (nic_type = check_nic_type(nic_name))) {
+			exit(1);
+		}
+		open_and_configure_interface(nic_name, &iface);
 	}
-	open_and_configure_interface(nic_name, &iface);
-	
+	if (param_mode == 1 || param_mode == 2) {
+		udpfd = open_udp_binded_sock_by_conf(ini, &addr);
+	}
+
 	// Open shared memory
 	rx_status_rc = status_memory_open_rc();
 	rx_status_rc->wifi_adapter_cnt = 1;	
 
 	// init uart
-	char * uart_name = (char *)iniparser_getstring(ini, "PROGRAM_NAME:uart", NULL);
+	char * uart_name = (char *)iniparser_getstring(ini, PROGRAM_NAME":uart", NULL);
 	uartfd = open(uart_name, O_RDWR|O_NOCTTY|O_NDELAY);			
 	if (uartfd < 0) {
-		fprintf(stderr, "PROGRAM_NAME ERROR: Unable to open UART. Ensure it is not in use by another application.\n");
+		fprintf(stderr, PROGRAM_NAME" ERROR: Unable to open UART. Ensure it is not in use by another application.\n");
 	}
 	
 	struct timeval to;
@@ -473,13 +564,30 @@ int main(int argc, char *argv[])
 	    fd_set readset;
 	    FD_ZERO(&readset);
 		FD_SET(iface.selectable_fd, &readset);
-			
+		FD_SET(udpfd, &readset);
+		
 	    int n = select(iface.selectable_fd+1, &readset, NULL, NULL, &to); 
 	    if (n == 0) {
 			continue;
 		}
 		if (FD_ISSET(iface.selectable_fd, &readset)) {
 			process_packet(&iface, uartfd);
+		}
+		if (FD_ISSET(udpfd, &readset)) {
+			int ret = recvfrom(udpfd, buf, sizeof(buf), 0, (struct sockaddr*)&addr, (socklen_t *)&slen);
+			if ( 0 >= ret )
+				continue;
+			process_packet_udp(buf, ret, uartfd);
+			
+			
+			decrypt_payload(raw, raw_len, param_enc, param_pwd, buf, &dec_len);
+			fill_buf_to_payload(buf, &seqno, &td);
+			fprintf(stderr, "?");
+			if (param_dbg) {
+				fprintf(stderr, "seqno = %ld \n", seqno);
+				dump_memory(raw, raw_len, "UDP recv raw - memory dump");
+				dump_memory(buf, dec_len, "UDP recv decrypted - memory dump");
+			}
 		}
 	}
 	close(uartfd);
