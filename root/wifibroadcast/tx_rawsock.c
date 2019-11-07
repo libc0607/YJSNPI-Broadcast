@@ -606,6 +606,7 @@ int main(int argc, char *argv[])
 			param_wifi_ldpc = 1;
 		}
 		param_wifi_stbc = iniparser_getint(ini, "tx:stbc", 0);
+		param_wifi_mode = 1;
 	} 
 	
 	/*
