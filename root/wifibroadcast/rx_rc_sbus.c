@@ -44,7 +44,7 @@ uart=/dev/ttyUSB0
 #include <time.h>
 #include <unistd.h>
 
-#define PROGRAM_NAME rx_rc_sbus
+#define PROGRAM_NAME "rx_rc_sbus"
 #define PCAP_FILTER_CHAR "ether[0x00:4] == 0xb4bf0000"
 // this is where we store a summary of the information from the radiotap header
 typedef struct  {
@@ -518,7 +518,7 @@ int main(int argc, char *argv[])
 	struct sockaddr_in addr;
 	int udpfd;
 	int slen = sizeof(addr);
-	uint8_t buf[256];
+	//uint8_t buf[256];
 	
 	// Get ini from file
 	char *file = argv[1];
@@ -573,7 +573,7 @@ int main(int argc, char *argv[])
 		if (FD_ISSET(iface.selectable_fd, &readset)) {
 			process_packet(&iface, uartfd);
 		}
-		if (FD_ISSET(udpfd, &readset)) {
+		/* if (FD_ISSET(udpfd, &readset)) {
 			int ret = recvfrom(udpfd, buf, sizeof(buf), 0, (struct sockaddr*)&addr, (socklen_t *)&slen);
 			if ( 0 >= ret )
 				continue;
@@ -588,7 +588,7 @@ int main(int argc, char *argv[])
 				dump_memory(raw, raw_len, "UDP recv raw - memory dump");
 				dump_memory(buf, dec_len, "UDP recv decrypted - memory dump");
 			}
-		}
+		} */
 	}
 	close(uartfd);
 	close(iface.selectable_fd);
