@@ -152,7 +152,7 @@ void usage(void) {
 		"fecnum=4\t\t\t# Number of FEC packets per block (default 4). Needs to match with rx\n"
 		"packetsize=1024\t\t\t# Number of bytes per packet (default %d, max. %d). This is also the FEC block size. Needs to match with rx\n"
 		"frametype=0\t\t\t# Frame type to send. 0 = DATA short, 1 = DATA standard, 2 = RTS\n"
-		"wifimode=0\t\t\t# Wi-Fi mode. 0=802.11g 0=802.11n\n"
+		"wifimode=0\t\t\t# Wi-Fi mode. 0=802.11g 1=802.11n\n"
 		"ldpc=0\t\t\t\t# 1-Use LDPC encode, 0-default. Experimental. Only valid when wifimode=n and both your Wi-Fi cards support LDPC.\n"
 		"stbc=0\t\t\t\t# 0-default, 1-1 STBC stream, 2-2 STBC streams, 3-3 STBC streams. Only valid when wifimode=n and both your Wi-Fi cards support STBC.\n"
 		"rate=6\t\t\t\t# When wifimode=g, data rate to send frames with. Choose 1,2,5,6,11,12,18,24,36 Mbit\n"
@@ -558,6 +558,7 @@ int main(int argc, char *argv[]) {
 			param_wifi_ldpc = 1;
 		}
 		param_wifi_stbc = iniparser_getint(ini, "tx:stbc", 0);
+		param_wifi_mode = 1;
 	} 
 
 	fprintf(stderr, "%s Config: packet %d/%d/%d, port %d, type %d, rate %d, transmode %d, wifimode %d, nic %s, encrypt %d\n",
