@@ -8,6 +8,10 @@ add_executable(rx  rx.c  lib.c  radiotap.c  fec.c xxtea.c)
 target_link_libraries(rx rt pcap iniparser)
 install (TARGETS rx DESTINATION bin)
 
+add_executable(rx_rc_telemetry_buf  rx_rc_telemetry_buf.c  lib.c  radiotap.c xxtea.c)
+target_link_libraries(rx_rc_telemetry_buf rt pcap iniparser)
+install (TARGETS rx_rc_telemetry_buf DESTINATION bin)
+
 add_executable(rssirx  rssirx.c  lib.c  radiotap.c xxtea.c)
 target_link_libraries(rssirx rt pcap iniparser)
 install (TARGETS rssirx DESTINATION bin)
@@ -19,6 +23,10 @@ install (TARGETS rssitx DESTINATION bin)
 add_executable(tx_rawsock  tx_rawsock.c  lib.c  fec.c xxtea.c)
 target_link_libraries(tx_rawsock rt pcap iniparser)
 install (TARGETS tx_rawsock DESTINATION bin)
+
+add_executable(tx_telemetry  tx_telemetry.c  lib.c  fec.c xxtea.c)
+target_link_libraries(tx_telemetry rt pcap iniparser)
+install (TARGETS tx_telemetry DESTINATION bin)
 
 add_executable(tx_measure  tx_measure.c  lib.c  fec.c xxtea.c)
 target_link_libraries(tx_measure rt pcap iniparser)
@@ -51,6 +59,14 @@ install (TARGETS sharedmem_init_rx DESTINATION bin)
 add_executable(sharedmem_init_tx  sharedmem_init_tx.c lib.c)
 target_link_libraries(sharedmem_init_tx rt pcap)
 install (TARGETS sharedmem_init_tx DESTINATION bin)
+
+add_executable(rx_rc_sbus rx_rc_sbus.c lib.c radiotap.c xxtea.c)
+target_link_libraries(rx_rc_sbus rt pcap iniparser)
+install (TARGETS rx_rc_sbus DESTINATION bin)
+
+add_executable(tx_rc_sbus tx_rc_sbus.c lib.c xxtea.c)
+target_link_libraries(tx_rc_sbus rt pcap iniparser)
+install (TARGETS tx_rc_sbus DESTINATION bin)
 
 add_executable(tx_test tx_test.c)
 target_link_libraries(tx_test rt pcap)
